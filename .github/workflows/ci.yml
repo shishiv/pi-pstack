@@ -9,10 +9,14 @@ permissions:
   contents: read
 
 jobs:
-  deterministic:
+  layer-verification:
+    name: layer-verification
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the exact pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -20,8 +24,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - run: npm ci
-      - run: npm run verify:foundation
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify the common foundation contract
+        run: npm run verify:foundation
       - name: Run complete deterministic checks when available
         shell: bash
         run: |
