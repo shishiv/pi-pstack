@@ -78,7 +78,12 @@ function evidenceFor(path) {
   };
 }
 const requirements = new Map();
-for (const path of [resolve(casePath), ...candidatePaths.map(resolve), judgePath, skillAbsolute])
+for (const path of [
+  resolve(casePath),
+  ...candidatePaths.map((candidatePath) => resolve(candidatePath)),
+  judgePath,
+  skillAbsolute,
+])
   requirements.set(path, await readFile(path));
 
 const evidence = {
