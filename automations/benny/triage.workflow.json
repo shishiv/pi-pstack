@@ -1,0 +1,8 @@
+{
+  "name": "benny-triage",
+  "schedule": "every 45s",
+  "workflow": "src/benny/workflows.ts#BENNY_TRIAGE_WORKFLOW",
+  "polling": "schedule-wake",
+  "nestedPolling": false,
+  "draftOnly": true
+}

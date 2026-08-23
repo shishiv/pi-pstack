@@ -1,0 +1,8 @@
+{
+  "name": "benny-reproduce",
+  "schedule": "every 45s",
+  "workflow": "src/benny/workflows.ts#BENNY_REPRODUCE_WORKFLOW",
+  "polling": "schedule-wake",
+  "nestedPolling": false,
+  "draftOnly": true
+}
