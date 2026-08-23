@@ -95,7 +95,7 @@ export interface StructuredEvalEvidence {
   ];
   judgeEvidence: FileEvidence;
   judge: {
-    winner: "Candidate A" | "Candidate B";
+    winner: "Candidate A" | "Candidate B" | "tie";
     rationale: string;
   };
   aggregate: {

@@ -303,4 +303,19 @@ describe("context and stack discovery", () => {
     ]);
     expect(ordered.map((item) => Number(item.number))).toEqual([41, 42, 43]);
   });
+
+  it("rejects cyclic and duplicate-head stack topology", () => {
+    expect(() =>
+      orderStack(context, [
+        { number: context.number, headRefName: "feature", baseRefName: "parent" },
+        { number: parsePrNumber(41), headRefName: "parent", baseRefName: "feature" },
+      ])
+    ).toThrow(/cyclic/);
+    expect(() =>
+      orderStack(context, [
+        { number: context.number, headRefName: "feature", baseRefName: "main" },
+        { number: parsePrNumber(43), headRefName: "feature", baseRefName: "other" },
+      ])
+    ).toThrow(/duplicate head/);
+  });
 });

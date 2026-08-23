@@ -653,6 +653,8 @@ export function orderStack(
 ): T.NonEmpty<T.PrContext> {
   const byNumber = new Map(open.map((pr) => [pr.number, pr]));
   const byHead = new Map(open.map((pr) => [pr.headRefName, pr]));
+  if (byHead.size !== open.length)
+    throw new Error("cannot order stack with duplicate head branches");
   const children = new Map<string, T.OpenPullRequest[]>();
   for (const pr of open)
     children.set(pr.baseRefName, [...(children.get(pr.baseRefName) ?? []), pr]);
@@ -661,10 +663,13 @@ export function orderStack(
   const start = byNumber.get(context.number);
   if (start === undefined) return [context];
   const down: T.OpenPullRequest[] = [];
+  const downSeen = new Set<T.PrNumber>([start.number]);
   let current = start;
   while (byHead.has(current.baseRefName)) {
     const parent = byHead.get(current.baseRefName);
     if (parent === undefined) break;
+    if (downSeen.has(parent.number)) throw new Error("cannot order cyclic pull request stack");
+    downSeen.add(parent.number);
     down.push(parent);
     current = parent;
   }

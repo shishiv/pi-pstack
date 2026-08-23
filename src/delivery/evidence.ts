@@ -147,7 +147,9 @@ export function parseEvalEvidence(value: unknown): StructuredEvalEvidence {
     throw new Error("eval evidence has invalid judge evidence");
   if (
     !object(value.judge) ||
-    (value.judge.winner !== "Candidate A" && value.judge.winner !== "Candidate B") ||
+    (value.judge.winner !== "Candidate A" &&
+      value.judge.winner !== "Candidate B" &&
+      value.judge.winner !== "tie") ||
     !nonEmpty(value.judge.rationale)
   )
     throw new Error("eval evidence has no real judge decision");

@@ -50,7 +50,7 @@ const judgePath = resolve(options.judge);
 const judge = JSON.parse(await readFile(judgePath, "utf8"));
 assert.ok(
   judge &&
-    (judge.winner === "Candidate A" || judge.winner === "Candidate B") &&
+    (judge.winner === "Candidate A" || judge.winner === "Candidate B" || judge.winner === "tie") &&
     typeof judge.rationale === "string" &&
     judge.rationale.trim(),
   "judge must contain a candidate winner and rationale",

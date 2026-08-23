@@ -674,6 +674,46 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
     );
     assert.match(incompleteStack.content[0].text, /missing exact-head receipts.*#41/i);
 
+    for (const [name, malformed] of [
+      [
+        "multiple roots",
+        [
+          { name: "feature", head: "abc123", base: "000000", pr: { number: 42, state: "OPEN" } },
+          { name: "other", head: "def456", base: "111111", pr: { number: 43, state: "OPEN" } },
+        ],
+      ],
+      [
+        "fork",
+        [
+          { name: "root", head: "def456", base: "000000", pr: { number: 41, state: "OPEN" } },
+          { name: "feature", head: "abc123", base: "def456", pr: { number: 42, state: "OPEN" } },
+          { name: "sibling", head: "aaa111", base: "def456", pr: { number: 43, state: "OPEN" } },
+        ],
+      ],
+      [
+        "cycle",
+        [
+          { name: "feature", head: "abc123", base: "def456", pr: { number: 42, state: "OPEN" } },
+          { name: "parent", head: "def456", base: "abc123", pr: { number: 41, state: "OPEN" } },
+        ],
+      ],
+    ]) {
+      stackBranches = malformed;
+      const topology = await runtime.toolsByName.get("pstack_delivery").execute(
+        `merge-${name}`,
+        {
+          backend: "gh-stack",
+          operation: "auto-merge",
+          pullRequest: "42",
+          receiptPath: receipt.details.path,
+        },
+        undefined,
+        undefined,
+        runtime.ctx,
+      );
+      assert.match(topology.content[0].text, /parentage|fork|cyclic/i, name);
+    }
+
     stackBranches = [
       {
         name: "feature",

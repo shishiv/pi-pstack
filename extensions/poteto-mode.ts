@@ -532,11 +532,15 @@ function stackPullRequestsThrough(
     return [{ pullRequest: String(number), headSha: item.head, baseSha: item.base }];
   });
   const heads = new Map(entries.map((entry) => [entry.headSha, entry]));
+  if (heads.size !== entries.length) throw new Error("gh stack contains duplicate branch heads");
   const roots = entries.filter((entry) => !heads.has(entry.baseSha));
   if (roots.length !== 1) throw new Error("gh stack branch parentage is not a single chain");
   const ordered = [] as typeof entries;
+  const visited = new Set<string>();
   let current: (typeof entries)[number] | undefined = roots[0];
   while (current) {
+    if (visited.has(current.headSha)) throw new Error("gh stack branch parentage is cyclic");
+    visited.add(current.headSha);
     ordered.push(current);
     const children = entries.filter((entry) => entry.baseSha === current!.headSha);
     if (children.length > 1) throw new Error("gh stack branch parentage contains a fork");
