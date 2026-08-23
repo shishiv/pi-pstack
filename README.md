@@ -1,18 +1,90 @@
 # pi-pstack
 
-`pi-pstack` is a private Pi-native port of Lauren Tan's pstack. It keeps the verification-first engineering method while replacing Cursor runtime contracts with Pi skills, extensions, subagents, sessions, and package conventions.
+Port privado e nativo do [pstack](https://github.com/cursor/plugins/tree/main/pstack) para o Pi. O pacote mantém o método verification-first: contexto de produto, feature maps, prova na superfície real, evals de skills e autonomia conquistada por evidência.
 
-The package is under active construction. Its default delivery backend is the official `github/gh-stack` extension. Graphite support is optional. Autonomous merge remains disabled until project readiness and exact-head verification gates pass.
+## Requisitos
 
-## Development
+- Pi `0.84.2` ou mais recente.
+- `pi-subagents` `0.54.0` ou mais recente.
+- `@howaboua/pi-ask` `0.0.5` ou mais recente.
+- `pi-mcp-adapter` `2.27.0` ou mais recente para fluxos que consultam MCP.
+- Playwright Chromium para verificação de navegador.
+- `github/gh-stack` como backend padrão de stacked PRs.
+- Graphite `gt` somente quando o backend opcional for selecionado.
+
+## Instalação
+
+Instale as dependências do host uma vez:
+
+```bash
+pi install npm:pi-subagents@0.54.0
+pi install npm:@howaboua/pi-ask@0.0.5
+pi install npm:pi-mcp-adapter@2.27.0
+```
+
+Instale este pacote privado por uma tag ou commit fixo:
+
+```bash
+pi install https://github.com/shishiv/pi-pstack@<ref>
+```
+
+Para um único projeto, acrescente `-l`.
+
+## Uso
+
+```text
+/poteto-mode on
+/poteto-mode implemente a mudança e prove o fluxo real
+/poteto-mode status
+/poteto-mode off
+```
+
+As demais skills seguem a sintaxe nativa do Pi:
+
+```text
+/skill:how
+/skill:interrogate
+/skill:create-verification-skill
+/skill:maintain-verification-skill
+```
+
+O modo sticky vale somente para a sessão ativa. Ele é restaurado pelo histórico da própria branch da sessão e não altera configurações globais.
+
+## Cadeia de confiança
+
+1. `create-verification-skill` registra o caminho real do usuário em um feature map.
+2. O harness dirige a superfície real e captura screenshot, árvore de acessibilidade, DOM e trace.
+3. Evals executam candidatos cegos entre modelos e aplicam assertions determinísticas antes do judge.
+4. Uma revisão independente valida o mesmo `HEAD`.
+5. O receipt reúne essas provas e fica vinculado ao SHA.
+6. Somente um receipt completo pode liberar auto-merge.
+
+## Stacked PRs
+
+`gh stack` é o backend padrão. O adapter Graphite só aparece quando `gt` está instalado. O pacote apenas traduz operações para os CLIs oficiais. Ele não mantém um segundo grafo de branches.
+
+## Benny
+
+Benny é instalado por projeto em `.pi/pstack/benny/`. Sua configuração fica separada em `.pi/pstack/benny-config/`.
+
+- `benny-triage` classifica relatos, deduplica tickets e responde apenas no thread original.
+- `benny-reproduce` exige duas reproduções independentes pela UI antes de tentar uma correção.
+- Workers não recebem credenciais nem ações de escrita para Slack.
+- Benny pode abrir uma draft PR. Ele nunca faz merge nem deploy.
+
+Os schedules ficam desativados até configuração, capability preflight e aprovação explícita.
+
+## Desenvolvimento e prova
 
 ```bash
 npm install
+npm run verify:deterministic
+npm run verify:browser
 npm run verify
 ```
 
-Operational completion is tracked by the local Unlazy ledger in `GATES.md`. The ledger and its evidence are intentionally ignored by Git.
+`npm run verify` inclui instalação limpa do pacote, Pi RPC real, testes de recursos, Playwright, evals, delivery e Benny.
 
-## Upstream
+## Atualização do upstream
 
-See [`UPSTREAM.md`](./UPSTREAM.md) for source provenance and the manual synchronization contract.
+Leia [`UPSTREAM.md`](./UPSTREAM.md). Cada atualização compara o novo commit do upstream com o commit registrado, classifica cada mudança e executa os evals afetados antes da suíte completa. Não existe camada de compatibilidade com Cursor.
