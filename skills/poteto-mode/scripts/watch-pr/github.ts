@@ -5,8 +5,13 @@ export const REVIEW_THREADS_QUERY =
   "\nquery ReviewThreads($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviewThreads(first: 100) {\n        nodes {\n          id\n          isResolved\n          comments(first: 10) {\n            nodes {\n              body\n              createdAt\n              path\n              line\n              author { login }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_COMMIT_STATUS_QUERY =
   "\nquery PrCommitStatuses($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 50) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
-export const PR_CHECK_ROLLUP_QUERY =
+const PR_CHECK_ROLLUP_QUERY_TEMPLATE =
   "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endPi\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+
+export const PR_CHECK_ROLLUP_QUERY = PR_CHECK_ROLLUP_QUERY_TEMPLATE.replace(
+  "endPi",
+  "endCursor",
+);
 
 interface CommandResult {
   readonly code: number;
@@ -350,7 +355,7 @@ function passKey(comment: T.ReviewComment | null): string | null {
   if (comment === null) return null;
   for (const pattern of [
     /RUN_ID:\s*([a-zA-Z0-9_.:-]+)/,
-    /CURSOR_AUTOMATION_ID:\s*([a-zA-Z0-9_.:-]+)/,
+    /PSTACK_AUTOMATION_ID:\s*([a-zA-Z0-9_.:-]+)/,
   ]) {
     const match = pattern.exec(comment.body);
     if (match?.[1]) return match[1];
@@ -563,8 +568,8 @@ export class GhGitHubReader implements T.GitHubReader {
     if (typeof page.hasNextPage !== "boolean")
       missing("contexts.pageInfo.hasNextPage", page.hasNextPage);
     const pageCursor = optionalString(
-      page.endPi,
-      "contexts.pageInfo.endPi"
+      page.endCursor,
+      "contexts.pageInfo.endCursor"
     );
     return { checks, endCursor: page.hasNextPage && pageCursor ? pageCursor : null };
   }
@@ -613,7 +618,7 @@ export async function resolveChecks(
   do {
     const page = await reader.checkRollupPage(context, after);
     checks.push(...page.checks);
-    after = page.endPi;
+    after = page.endCursor;
   } while (after !== null);
   const fallback = nonEmpty(checks);
   if (fallback !== null) return { source: "graphql-rollup", checks: fallback };

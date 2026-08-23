@@ -16,6 +16,7 @@ test("declares a private Pi package with explicit resource roots", async () => {
     subagents: { agents: ["./agents"] },
   });
   assert.deepEqual(manifest["pi-subagents"], { agents: ["./agents"] });
+  assert.equal(manifest.exports["./benny"], "./src/benny/index.ts");
 });
 
 test("pins the locally proven Pi compatibility floor", async () => {

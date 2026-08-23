@@ -9,6 +9,7 @@ for (const [command, args] of [
   ["npm", ["test"]],
   [process.execPath, ["scripts/verify-package.mjs"]],
   [process.execPath, ["scripts/verify-runtime.mjs"]],
+  [process.execPath, ["scripts/verify-upstream-tools.mjs"]],
   [process.execPath, ["scripts/verify-browser-e2e.mjs"]],
   [process.execPath, ["scripts/verify-evals.mjs"]],
   [process.execPath, ["scripts/verify-delivery.mjs"]],

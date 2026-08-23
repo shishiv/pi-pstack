@@ -59,6 +59,7 @@ async function filesUnder(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
+    if (entry.name === "node_modules") continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await filesUnder(path)));
     else if (entry.isFile()) files.push(path);
@@ -66,7 +67,7 @@ async function filesUnder(directory) {
   return files;
 }
 
-test("resource inventory is exactly 44 skills, 22 playbooks, 2 agents, and Benny", async () => {
+test("resource inventory is exactly 44 skills, 22 playbooks, 3 agents, and Benny", async () => {
   const skillDirs = (await readdir(skillsDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
@@ -85,7 +86,7 @@ test("resource inventory is exactly 44 skills, 22 playbooks, 2 agents, and Benny
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => entry.name)
     .toSorted();
-  assert.deepEqual(agents, ["comment-sicko.md", "poteto-agent.md"]);
+  assert.deepEqual(agents, ["benny-coordinator.md", "comment-sicko.md", "poteto-agent.md"]);
   const bennySkills = (await filesUnder(join(bennyDir, "skills"))).filter((path) =>
     path.endsWith("SKILL.md"),
   );
@@ -139,10 +140,13 @@ test("active resources use Pi runtime contracts", async () => {
 
 test("agent frontmatter uses valid Pi roles", async () => {
   const comment = await readFile(join(agentsDir, "comment-sicko.md"), "utf8");
+  const benny = await readFile(join(agentsDir, "benny-coordinator.md"), "utf8");
   const poteto = await readFile(join(agentsDir, "poteto-agent.md"), "utf8");
   assert.match(comment, /name: comment-sicko/);
   assert.match(comment, /acceptanceRole: read-only/);
   assert.match(comment, /never edit files/i);
+  assert.match(benny, /tools: read, grep, find, ls, pstack_benny/);
+  assert.doesNotMatch(benny, /pstack_delivery/);
   assert.match(poteto, /async: true/);
   assert.match(poteto, /inheritProjectContext: true/);
   assert.match(poteto, /inheritSkills: true/);

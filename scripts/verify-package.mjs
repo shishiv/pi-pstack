@@ -6,16 +6,26 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { createJiti } from "jiti";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+const jiti = createJiti(import.meta.url, { interopDefault: true });
+const { packageContract } = await jiti.import("../src/package-contract.ts");
 
-assert.equal(manifest.name, "@shishiv/pi-pstack");
+assert.equal(manifest.name, packageContract.name);
 assert.equal(manifest.private, true);
 assert.equal(manifest.type, "module");
 assert.deepEqual(manifest.pi.extensions, ["./extensions"]);
 assert.deepEqual(manifest.pi.skills, ["./skills"]);
 assert.deepEqual(manifest.pi.subagents.agents, ["./agents"]);
+assert.equal(
+  manifest.peerDependencies["@earendil-works/pi-coding-agent"],
+  `>=${packageContract.piVersionFloor}`,
+);
+const upstream = await readFile(join(root, "UPSTREAM.md"), "utf8");
+assert.match(upstream, new RegExp(packageContract.upstream.commit));
+assert.match(upstream, new RegExp(packageContract.upstream.version.replaceAll(".", "\\.")));
 
 for (const relativePath of ["extensions", "skills", "agents"]) {
   assert.equal((await stat(join(root, relativePath))).isDirectory(), true);

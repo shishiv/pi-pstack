@@ -94,7 +94,7 @@ try {
       event.message?.customType === "subagent-slash-result" &&
       event.message?.content?.includes("Subagents doctor report"),
   )?.message?.content;
-  assert.match(doctor ?? "", /package 2/);
+  assert.match(doctor ?? "", /package 3/);
 } finally {
   await rm(home, { recursive: true, force: true });
 }
