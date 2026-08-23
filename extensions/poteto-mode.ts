@@ -15,6 +15,7 @@ import {
   loadEvidenceReceipt,
   validateEvidenceReceipt,
   verifyEvidenceReceiptFiles,
+  type EvidenceReceipt,
   type StackBackendName,
   type StackOperation,
 } from "../src/delivery/index.js";
@@ -248,12 +249,8 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       featureMapPath: Type.String({ minLength: 1 }),
       skillPath: Type.String({ minLength: 1 }),
       reviewPath: Type.String({ minLength: 1 }),
-      reviewer: Type.String({ minLength: 1 }),
       evalPath: Type.String({ minLength: 1 }),
-      artifactPaths: Type.Array(
-        Type.Object({ kind: Type.String({ minLength: 1 }), path: Type.String({ minLength: 1 }) }),
-        { minItems: 1 },
-      ),
+      artifactManifestPath: Type.String({ minLength: 1 }),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       if (!ctx.isProjectTrusted()) return deliveryRejected("project is not trusted");
@@ -283,14 +280,10 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
           origin: "human",
           featureMapPath: params.featureMapPath,
           skillPath: params.skillPath,
-          artifactPaths: params.artifactPaths,
+          artifactManifestPath: params.artifactManifestPath,
           reviewPath: params.reviewPath,
-          reviewer: params.reviewer,
           evalPath: params.evalPath,
-          deterministicChecks: {
-            status: "green",
-            checks: [{ name: "git tracked tree is clean", status: "passed" }],
-          },
+          cleanWorktreeCheck: { name: "clean-worktree", status: "passed" },
         });
         const directory = join(ctx.cwd, ".pi", "pstack", "receipts");
         const path = join(directory, `${receipt.headSha}.json`);
@@ -325,6 +318,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       pullRequest: Type.Optional(Type.String()),
       draft: Type.Optional(Type.Boolean()),
       receiptPath: Type.Optional(Type.String()),
+      receiptPaths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       if (!ctx.isProjectTrusted()) {
@@ -341,53 +335,76 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       }
       try {
         if (params.operation !== "inspect") {
-          if (!params.receiptPath) return deliveryRejected("a verified receipt path is required");
-          const receipt = await loadEvidenceReceipt(params.receiptPath, ctx.cwd);
-          const semanticReasons = validateEvidenceReceipt(receipt);
-          if (semanticReasons.length > 0) return deliveryRejected(semanticReasons.join("; "));
-          const fileReasons = await verifyEvidenceReceiptFiles(receipt, ctx.cwd);
-          if (fileReasons.length > 0) return deliveryRejected(fileReasons.join("; "));
+          const level = deliveryLevel(params.operation);
+          const paths = [
+            ...new Set([params.receiptPath, ...(params.receiptPaths ?? [])].filter(Boolean)),
+          ] as string[];
+          if (paths.length === 0) return deliveryRejected("a verified receipt path is required");
+          const receipts = await Promise.all(
+            paths.map((path) => loadEvidenceReceipt(path, ctx.cwd)),
+          );
           if (params.operation === "auto-merge") {
+            if (params.backend !== "gh-stack")
+              return deliveryRejected("Graphite auto-merge lacks stack-wide receipt verification");
             if (!params.pullRequest)
               return deliveryRejected("auto-merge requires a pull request number");
-            const pullRequest = await pi.exec(
-              "gh",
-              [
-                "pr",
-                "view",
-                params.pullRequest,
-                "--json",
-                "headRefOid,isDraft,statusCheckRollup,mergeStateStatus",
-              ],
-              { cwd: ctx.cwd, signal },
+            const stackResult = await pi.exec("gh", ["stack", "view", "--json"], {
+              cwd: ctx.cwd,
+              signal,
+            });
+            if (stackResult.code !== 0)
+              return deliveryRejected("stack membership could not be verified");
+            const required = stackPullRequestsThrough(stackResult.stdout, params.pullRequest);
+            const byHead = new Map(receipts.map((receipt) => [receipt.headSha, receipt]));
+            const missing = required.filter((entry) => !byHead.has(entry.headSha));
+            if (missing.length > 0)
+              return deliveryRejected(
+                `missing exact-head receipts for stack PRs: ${missing.map((entry) => `#${entry.pullRequest}`).join(", ")}`,
+              );
+            for (const entry of required) {
+              const receipt = byHead.get(entry.headSha)!;
+              const rejection = await validateReceiptForHead({
+                receipt,
+                root: ctx.cwd,
+                repoIdentity: repository.stdout.trim(),
+                headSha: entry.headSha,
+                backend: params.backend as StackBackendName,
+                level,
+              });
+              if (rejection) return deliveryRejected(rejection);
+              const liveRejection = await verifyPullRequestState(
+                pi,
+                ctx.cwd,
+                signal,
+                entry.pullRequest,
+                entry.headSha,
+              );
+              if (liveRejection) return deliveryRejected(liveRejection);
+            }
+          } else {
+            const receipt = receipts.find(
+              (candidate) => candidate.headSha === currentHead.stdout.trim(),
             );
-            if (pullRequest.code !== 0)
-              return deliveryRejected("pull request state could not be verified");
-            const state = JSON.parse(pullRequest.stdout) as {
-              headRefOid?: string;
-              isDraft?: boolean;
-              mergeStateStatus?: string;
-              statusCheckRollup?: { conclusion?: string; status?: string }[];
-            };
-            if (state.headRefOid !== receipt.headSha)
-              return deliveryRejected("receipt does not match the pull request head");
-            if (state.isDraft) return deliveryRejected("pull request is still a draft");
-            if (!pullRequestChecksPass(state.statusCheckRollup ?? []))
-              return deliveryRejected("pull request checks are not green");
-            if (!new Set(["CLEAN", "HAS_HOOKS"]).has(state.mergeStateStatus ?? ""))
-              return deliveryRejected("pull request is not mergeable");
+            if (!receipt) return deliveryRejected("no receipt matches the current HEAD");
+            const rejection = await validateReceiptForHead({
+              receipt,
+              root: ctx.cwd,
+              repoIdentity: repository.stdout.trim(),
+              headSha: currentHead.stdout.trim(),
+              backend: params.backend as StackBackendName,
+              level,
+            });
+            if (rejection) return deliveryRejected(rejection);
+            const authorization = authorizeDelivery({
+              receipt,
+              repoIdentity: repository.stdout.trim(),
+              currentHeadSha: currentHead.stdout.trim(),
+              backend: params.backend as StackBackendName,
+              level,
+            });
+            if (authorization.draftOnly && params.operation === "submit" && params.draft === false)
+              return deliveryRejected("Benny delivery is draft-only");
           }
-          const level = deliveryLevel(params.operation);
-          const authorization = authorizeDelivery({
-            receipt,
-            repoIdentity: repository.stdout.trim(),
-            currentHeadSha: currentHead.stdout.trim(),
-            backend: params.backend as StackBackendName,
-            level,
-          });
-          if (!authorization.allowed) return deliveryRejected(authorization.reasons.join("; "));
-          if (authorization.draftOnly && params.operation === "submit" && params.draft === false)
-            return deliveryRejected("Benny delivery is draft-only");
         }
         const runner = {
           async run(argv: readonly string[]) {
@@ -461,6 +478,88 @@ function deliveryLevel(operation: string): "prepare" | "pr" | "merge-ready" | "a
   if (operation === "sync" || operation === "rebase") return "merge-ready";
   if (operation === "auto-merge") return "auto-merge";
   throw new Error(`unsupported mutating delivery operation: ${operation}`);
+}
+
+async function validateReceiptForHead(input: {
+  receipt: EvidenceReceipt;
+  root: string;
+  repoIdentity: string;
+  headSha: string;
+  backend: StackBackendName;
+  level: "prepare" | "pr" | "merge-ready" | "auto-merge";
+}): Promise<string | undefined> {
+  const semanticReasons = validateEvidenceReceipt(input.receipt);
+  if (semanticReasons.length > 0) return semanticReasons.join("; ");
+  const fileReasons = await verifyEvidenceReceiptFiles(input.receipt, input.root, {
+    repoIdentity: input.repoIdentity,
+    headSha: input.headSha,
+  });
+  if (fileReasons.length > 0) return fileReasons.join("; ");
+  const authorization = authorizeDelivery({
+    receipt: input.receipt,
+    repoIdentity: input.repoIdentity,
+    currentHeadSha: input.headSha,
+    backend: input.backend,
+    level: input.level,
+  });
+  return authorization.allowed ? undefined : authorization.reasons.join("; ");
+}
+
+function stackPullRequestsThrough(
+  source: string,
+  targetPullRequest: string,
+): { pullRequest: string; headSha: string }[] {
+  const value: unknown = JSON.parse(source);
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !Array.isArray((value as { branches?: unknown }).branches)
+  )
+    throw new Error("gh stack returned an invalid branch list");
+  const entries = (value as { branches: unknown[] }).branches.flatMap((branch) => {
+    if (!branch || typeof branch !== "object") return [];
+    const item = branch as {
+      head?: unknown;
+      isMerged?: unknown;
+      pr?: { number?: unknown; state?: unknown };
+    };
+    if (item.isMerged === true || item.pr?.state === "MERGED") return [];
+    if (typeof item.head !== "string" || !/^[a-f0-9]{6,64}$/i.test(item.head)) return [];
+    const number = item.pr?.number;
+    if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) return [];
+    return [{ pullRequest: String(number), headSha: item.head }];
+  });
+  const target = entries.findIndex((entry) => entry.pullRequest === targetPullRequest);
+  if (target < 0) throw new Error(`target PR #${targetPullRequest} is not in the active stack`);
+  return entries.slice(0, target + 1);
+}
+
+async function verifyPullRequestState(
+  pi: ExtensionAPI,
+  cwd: string,
+  signal: AbortSignal | undefined,
+  pullRequest: string,
+  expectedHead: string,
+): Promise<string | undefined> {
+  const result = await pi.exec(
+    "gh",
+    ["pr", "view", pullRequest, "--json", "headRefOid,isDraft,statusCheckRollup,mergeStateStatus"],
+    { cwd, signal },
+  );
+  if (result.code !== 0) return `pull request #${pullRequest} state could not be verified`;
+  const state = JSON.parse(result.stdout) as {
+    headRefOid?: string;
+    isDraft?: boolean;
+    mergeStateStatus?: string;
+    statusCheckRollup?: { conclusion?: string; state?: string; status?: string }[];
+  };
+  if (state.headRefOid !== expectedHead) return `receipt does not match PR #${pullRequest} head`;
+  if (state.isDraft) return `pull request #${pullRequest} is still a draft`;
+  if (!pullRequestChecksPass(state.statusCheckRollup ?? []))
+    return `pull request #${pullRequest} checks are not green`;
+  if (!new Set(["CLEAN", "HAS_HOOKS"]).has(state.mergeStateStatus ?? ""))
+    return `pull request #${pullRequest} is not mergeable`;
+  return undefined;
 }
 
 /** Flatten shell-like and structured tool payloads before applying merge gates. */

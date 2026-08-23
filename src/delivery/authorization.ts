@@ -9,12 +9,12 @@ import {
 const IDENTITY_FIELDS = ["repoIdentity", "headSha"] as const;
 
 export interface EvidenceReceiptInput extends Omit<EvidenceReceipt, "version"> {
-  version?: 1;
+  version?: 2;
 }
 
 /** Construct a receipt with an explicit schema version; no evidence is inferred. */
 export function createEvidenceReceipt(input: EvidenceReceiptInput): EvidenceReceipt {
-  return { ...input, version: 1 };
+  return { ...input, version: 2 };
 }
 
 function nonEmpty(value: unknown): value is string {
@@ -32,7 +32,7 @@ export function validateEvidenceReceipt(receipt: unknown): string[] {
   const reasons: string[] = [];
   if (!receipt || typeof receipt !== "object") return ["missing evidence receipt"];
   const value = receipt as Partial<EvidenceReceipt>;
-  if (value.version !== 1) reasons.push("unsupported evidence receipt version");
+  if (value.version !== 2) reasons.push("unsupported evidence receipt version");
   for (const field of IDENTITY_FIELDS) {
     if (!nonEmpty(value[field])) reasons.push(`missing evidence: ${field}`);
   }
@@ -79,13 +79,17 @@ export function validateEvidenceReceipt(receipt: unknown): string[] {
   const evaluation = value.evalResult;
   if (!evaluation || evaluation.status !== "passed" || !validFileEvidence(evaluation.evidence))
     reasons.push("eval result is not passed");
+  if (!validFileEvidence(value.reviewEvidence)) reasons.push("invalid structured review evidence");
+  if (!validFileEvidence(value.evalEvidence)) reasons.push("invalid structured eval evidence");
+  if (!validFileEvidence(value.artifactManifest))
+    reasons.push("invalid artifact manifest evidence");
   if (
     value.projectReadiness !== undefined &&
     value.projectReadiness !== "ready" &&
     value.projectReadiness !== "not-ready"
   )
     reasons.push("invalid project readiness");
-  if (value.origin !== undefined && value.origin !== "human" && value.origin !== "benny")
+  if (value.origin !== "human" && value.origin !== "benny")
     reasons.push("invalid evidence: origin");
   return reasons;
 }

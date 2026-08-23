@@ -8,6 +8,7 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const delivery = await jiti.import("../../src/delivery/index.ts");
+const evals = await jiti.import("../../src/evals/index.ts");
 
 const sha = (text) => createHash("sha256").update(text).digest("hex");
 const map = `# Feature map: demo
@@ -35,6 +36,26 @@ async function fixture({
   await writeFile(join(root, "raw-review.md"), raw);
   await writeFile(join(root, "screenshot.png"), "png");
   await writeFile(join(root, "trace.zip"), "trace");
+  const evalCase = {
+    id: "receipt-live",
+    targetSkill: "verify-demo",
+    fixture: {},
+    input: { request: "prove it" },
+    requiredAssertions: [{ kind: "required-text", text: "OK" }],
+    prohibitedBehaviors: ["FORBIDDEN"],
+    dependencySkills: [],
+    evidenceExpectations: { required: [] },
+  };
+  const candidateA = currentPass ? "OK\n" : "not okay\n";
+  const candidateB = currentPass ? "not okay\n" : "OK\n";
+  const judge = {
+    winner: currentPass ? "Candidate A" : "Candidate B",
+    rationale: "blind comparison",
+  };
+  await writeFile(join(root, "eval-case.json"), JSON.stringify(evalCase));
+  await writeFile(join(root, "candidate-a.txt"), candidateA);
+  await writeFile(join(root, "candidate-b.txt"), candidateB);
+  await writeFile(join(root, "judge.json"), JSON.stringify(judge));
   await writeFile(
     join(root, "review.json"),
     JSON.stringify({
@@ -49,8 +70,8 @@ async function fixture({
     }),
   );
   const skillEvidence = { path: "SKILL.md", sha256: sha(skill) };
-  const passing = { passed: true, hardPassed: true, assertions: [] };
-  const failing = { passed: false, hardPassed: false, assertions: [] };
+  const gradeA = evals.gradeCandidate(evalCase, { text: candidateA });
+  const gradeB = evals.gradeCandidate(evalCase, { text: candidateB });
   const aggregate = currentPass
     ? {
         accepted: true,
@@ -69,12 +90,25 @@ async function fixture({
       type: "eval-evidence",
       repoIdentity: repo,
       headSha: head,
+      caseId: evalCase.id,
+      evalCase: { path: "eval-case.json", sha256: sha(JSON.stringify(evalCase)) },
       targetSkill: skillEvidence,
       candidates: [
-        { label: "Candidate A", current: true, grade: currentPass ? passing : failing },
-        { label: "Candidate B", current: false, grade: currentPass ? failing : passing },
+        {
+          label: "Candidate A",
+          current: true,
+          output: { path: "candidate-a.txt", sha256: sha(candidateA) },
+          grade: gradeA,
+        },
+        {
+          label: "Candidate B",
+          current: false,
+          output: { path: "candidate-b.txt", sha256: sha(candidateB) },
+          grade: gradeB,
+        },
       ],
-      judge: { winner: currentPass ? "Candidate A" : "Candidate B", rationale: "hard assertions" },
+      judgeEvidence: { path: "judge.json", sha256: sha(JSON.stringify(judge)) },
+      judge,
       aggregate,
     }),
   );
@@ -102,6 +136,7 @@ async function create(root, extra = {}) {
     artifactManifestPath: "artifact-manifest.json",
     reviewPath: "review.json",
     evalPath: "eval.json",
+    cleanWorktreeCheck: { name: "clean-worktree", status: "passed" },
     ...extra,
   });
 }

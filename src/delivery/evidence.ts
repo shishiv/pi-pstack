@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { aggregateGrades, type BlindLabel, type CandidateGrade } from "../evals/index.js";
+import {
+  aggregateGrades,
+  gradeCandidate,
+  parseEvalCaseJson,
+  type BlindLabel,
+  type CandidateGrade,
+  type EvalCase,
+} from "../evals/index.js";
 import {
   assertValidFeatureMap,
   parseFeatureMapMarkdown,
@@ -107,6 +114,8 @@ export function parseEvalEvidence(value: unknown): StructuredEvalEvidence {
     throw new Error("invalid structured eval evidence");
   if (!nonEmpty(value.repoIdentity) || !nonEmpty(value.headSha))
     throw new Error("eval evidence is missing repository identity or HEAD");
+  if (!nonEmpty(value.caseId) || !fileEvidenceShape(value.evalCase))
+    throw new Error("eval evidence has invalid eval case");
   if (!fileEvidenceShape(value.targetSkill))
     throw new Error("eval evidence has invalid target skill");
   const candidates = value.candidates;
@@ -119,12 +128,16 @@ export function parseEvalEvidence(value: unknown): StructuredEvalEvidence {
     candidates[1].label !== "Candidate B" ||
     candidates[0].current !== true ||
     candidates[1].current !== false ||
+    !fileEvidenceShape(candidates[0].output) ||
+    !fileEvidenceShape(candidates[1].output) ||
     !("grade" in candidates[0]) ||
     !("grade" in candidates[1])
   )
     throw new Error(
       "eval evidence must contain exactly two blind candidates with Candidate A current",
     );
+  if (!fileEvidenceShape(value.judgeEvidence))
+    throw new Error("eval evidence has invalid judge evidence");
   if (
     !object(value.judge) ||
     (value.judge.winner !== "Candidate A" && value.judge.winner !== "Candidate B") ||
@@ -205,8 +218,6 @@ function validateExactIdentity(
 }
 
 export interface EvidenceReceiptFilesInput {
-  /** Compatibility index for integrations that still send retired check fields. */
-  readonly [key: string]: unknown;
   root: string;
   repoIdentity: string;
   headSha: string;
@@ -214,19 +225,77 @@ export interface EvidenceReceiptFilesInput {
   origin: DeliveryOrigin;
   featureMapPath: string;
   skillPath: string;
-  artifactManifestPath?: string;
-  /** Kept as an input for old integrations; artifact kinds now come from the manifest. */
-  artifactPaths?: readonly { kind: string; path: string }[];
+  artifactManifestPath: string;
   reviewPath: string;
-  reviewer?: string;
-  runId?: string;
   evalPath: string;
-  /** Internal callers may provide the single fixed clean-worktree result. */
-  cleanWorktreeCheck?: {
+  /** The caller must obtain this result from the fixed git cleanliness probe. */
+  cleanWorktreeCheck: {
     name: "clean-worktree";
     status: "passed" | "failed" | "not-run";
     output?: string;
   };
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function verifiedFile(root: string, expected: FileEvidence, label: string): Promise<string> {
+  const actual = await fileEvidence(root, expected.path);
+  if (actual.sha256.toLowerCase() !== expected.sha256.toLowerCase())
+    throw new Error(`${label} digest does not match`);
+  return readFile(evidencePath(root, expected.path), "utf8");
+}
+
+function candidatePayload(text: string): unknown {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return object(parsed) ? parsed : { text };
+  } catch {
+    return { text };
+  }
+}
+
+async function validateEvalSemantics(
+  evaluation: StructuredEvalEvidence,
+  root: string,
+): Promise<void> {
+  const evalCaseText = await verifiedFile(root, evaluation.evalCase, "eval case");
+  const evalCase: EvalCase = parseEvalCaseJson(evalCaseText);
+  if (evalCase.id !== evaluation.caseId) throw new Error("eval case id does not match evidence");
+
+  const grades: Partial<Record<BlindLabel, CandidateGrade>> = {};
+  for (const candidate of evaluation.candidates) {
+    const output = await verifiedFile(root, candidate.output, `${candidate.label} output`);
+    const actual = gradeCandidate(evalCase, candidatePayload(output));
+    if (!sameJson(actual, candidate.grade))
+      throw new Error(`${candidate.label} grade does not match observable output`);
+    grades[candidate.label] = actual;
+  }
+  const judgeText = await verifiedFile(root, evaluation.judgeEvidence, "judge output");
+  const judgeValue = parseJson(judgeText, "judge output");
+  if (!object(judgeValue) || !sameJson(judgeValue, evaluation.judge))
+    throw new Error("judge decision does not match judge evidence");
+  const aggregate = aggregateGrades(
+    {
+      "Candidate A": grades["Candidate A"]!,
+      "Candidate B": grades["Candidate B"]!,
+    },
+    evaluation.judge,
+  );
+  if (
+    !sameJson(
+      {
+        accepted: aggregate.accepted,
+        winner: aggregate.winner,
+        reason: aggregate.reason,
+      },
+      evaluation.aggregate,
+    )
+  )
+    throw new Error("eval aggregate result does not match aggregateGrades");
+  if (!grades["Candidate A"]?.hardPassed)
+    throw new Error("current Candidate A does not hard-pass the eval");
 }
 
 /** Create a receipt by reading only the declared, exact-head evidence chain. */
@@ -234,7 +303,10 @@ export async function createEvidenceReceiptFromFiles(
   input: EvidenceReceiptFilesInput,
 ): Promise<EvidenceReceipt> {
   const featureMapEvidence = await fileEvidence(input.root, input.featureMapPath);
-  if (input.cleanWorktreeCheck && input.cleanWorktreeCheck.status !== "passed")
+  if (
+    input.cleanWorktreeCheck.name !== "clean-worktree" ||
+    input.cleanWorktreeCheck.status !== "passed"
+  )
     throw new Error("clean worktree check did not pass");
   const featureMap = parseFeatureMap(
     await readFile(evidencePath(input.root, input.featureMapPath), "utf8"),
@@ -257,17 +329,12 @@ export async function createEvidenceReceiptFromFiles(
     headSha: input.headSha,
     skill,
   });
-  if (input.reviewer !== undefined && review.reviewer !== input.reviewer)
-    throw new Error("reviewer identity does not match review evidence");
-  if (input.runId !== undefined && review.runId !== input.runId)
-    throw new Error("review run identity does not match review evidence");
+  await validateEvalSemantics(evaluation, input.root);
+  const rawReviewText = await verifiedFile(input.root, review.rawReview, "raw review output");
+  if (!/^VERIFIED$/m.test(rawReviewText))
+    throw new Error("raw review output does not contain an exact VERIFIED verdict");
   const rawReview = await fileEvidence(input.root, review.rawReview.path);
-  if (rawReview.sha256.toLowerCase() !== review.rawReview.sha256.toLowerCase())
-    throw new Error("raw review output digest does not match");
-  const manifestEvidence = await fileEvidence(
-    input.root,
-    input.artifactManifestPath ?? "artifact-manifest.json",
-  );
+  const manifestEvidence = await fileEvidence(input.root, input.artifactManifestPath);
   const manifestValue = parseJson(
     await readFile(evidencePath(input.root, manifestEvidence.path), "utf8"),
     "artifact manifest",
@@ -294,10 +361,6 @@ export async function createEvidenceReceiptFromFiles(
       if (path) artifacts.push({ kind, ...(await fileEvidence(input.root, path)) });
     }
   }
-  // A manifest is authoritative. Reject a caller's list if it attempts to smuggle another kind.
-  for (const declared of input.artifactPaths ?? [])
-    if (!requiredKinds.has(declared.kind))
-      throw new Error(`artifact kind is not declared by feature map: ${declared.kind}`);
   const independentReview: IndependentReview = {
     status: "approved",
     reviewer: review.reviewer,
@@ -312,9 +375,7 @@ export async function createEvidenceReceiptFromFiles(
     headSha: input.headSha,
     featureMap: featureMapEvidence,
     skill,
-    deterministicChecks: input.cleanWorktreeCheck
-      ? { status: "green", checks: [input.cleanWorktreeCheck] }
-      : FIXED_CLEAN_WORKTREE_CHECKS,
+    deterministicChecks: { status: "green", checks: [input.cleanWorktreeCheck] },
     liveVerificationArtifacts: artifacts,
     independentReview,
     evalResult: { status: "passed", evidence: evalEvidence },
@@ -330,8 +391,6 @@ export async function createEvidenceReceiptFromFiles(
 async function validateStructuredFiles(receipt: EvidenceReceipt, root: string): Promise<string[]> {
   const reasons: string[] = [];
   try {
-    if (!receipt.reviewEvidence || !receipt.evalEvidence || !receipt.artifactManifest)
-      throw new Error("receipt is missing structured evidence references");
     const review = parseReviewEvidence(
       parseJson(
         await readFile(evidencePath(root, receipt.reviewEvidence.path), "utf8"),
@@ -349,9 +408,10 @@ async function validateStructuredFiles(receipt: EvidenceReceipt, root: string): 
       headSha: receipt.headSha,
       skill: receipt.skill,
     });
-    const raw = await fileEvidence(root, review.rawReview.path);
-    if (raw.sha256.toLowerCase() !== review.rawReview.sha256.toLowerCase())
-      throw new Error("raw review output digest does not match");
+    await validateEvalSemantics(evaluation, root);
+    const rawText = await verifiedFile(root, review.rawReview, "raw review output");
+    if (!/^VERIFIED$/m.test(rawText))
+      throw new Error("raw review output does not contain an exact VERIFIED verdict");
     if (reviewEvidenceIdentity(receipt, review) === false)
       throw new Error("receipt reviewer identity does not match review evidence");
     const manifestValue = parseJson(
@@ -389,21 +449,6 @@ async function validateStructuredFiles(receipt: EvidenceReceipt, root: string): 
       )
         throw new Error(`${kind} artifact digest or path does not match artifact manifest`);
     }
-    const candidateGrades = evaluation.candidates as unknown as [
-      { label: BlindLabel; grade: CandidateGrade },
-      { label: BlindLabel; grade: CandidateGrade },
-    ];
-    const aggregate = aggregateGrades(
-      { "Candidate A": candidateGrades[0].grade, "Candidate B": candidateGrades[1].grade },
-      evaluation.judge,
-    );
-    if (
-      aggregate.accepted !== evaluation.aggregate.accepted ||
-      aggregate.winner !== evaluation.aggregate.winner ||
-      aggregate.reason !== evaluation.aggregate.reason
-    )
-      throw new Error("eval aggregate result does not match aggregateGrades");
-    if (aggregate.accepted !== true) throw new Error("eval aggregate did not pass");
   } catch (error) {
     reasons.push(error instanceof Error ? error.message : String(error));
   }

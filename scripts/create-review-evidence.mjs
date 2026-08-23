@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const args = process.argv.slice(2);
 const rawPath = args.shift();
@@ -23,6 +23,7 @@ const repoIdentity = options.repo ?? process.env.REPO_IDENTITY;
 const headSha = options.head ?? process.env.HEAD_SHA;
 const reviewer = options.reviewer ?? process.env.REVIEWER_ID;
 const runId = options.run ?? process.env.REVIEW_RUN_ID;
+const root = options.root ? resolve(options.root) : process.cwd();
 for (const [name, value] of Object.entries({
   repo: repoIdentity,
   head: headSha,
@@ -32,6 +33,12 @@ for (const [name, value] of Object.entries({
   assert.ok(value, `--${name} is required`);
 
 const absolute = resolve(rawPath);
+const relativePath = relative(root, absolute);
+assert.ok(
+  relativePath === "" ||
+    (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath)),
+  "raw review output must be inside the repository",
+);
 const raw = await readFile(absolute, "utf8");
 assert.match(
   raw,
@@ -47,7 +54,7 @@ const evidence = {
   runId,
   verdict: "VERIFIED",
   rawReview: {
-    path: absolute,
+    path: relativePath.replaceAll("\\", "/"),
     sha256: createHash("sha256").update(raw).digest("hex"),
   },
 };

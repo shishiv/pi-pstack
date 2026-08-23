@@ -73,11 +73,14 @@ export interface StructuredEvalEvidence {
   type: "eval-evidence";
   repoIdentity: string;
   headSha: string;
+  caseId: string;
+  evalCase: FileEvidence;
   targetSkill: FileEvidence;
   candidates: readonly [
-    { label: "Candidate A"; current: true; grade: unknown },
-    { label: "Candidate B"; current: false; grade: unknown },
+    { label: "Candidate A"; current: true; output: FileEvidence; grade: unknown },
+    { label: "Candidate B"; current: false; output: FileEvidence; grade: unknown },
   ];
+  judgeEvidence: FileEvidence;
   judge: {
     winner: "Candidate A" | "Candidate B";
     rationale: string;
@@ -94,7 +97,7 @@ export interface StructuredEvalEvidence {
  * understood rather than being treated as partial evidence.
  */
 export interface EvidenceReceipt {
-  version: 1;
+  version: 2;
   repoIdentity: string;
   headSha: string;
   featureMap: FileEvidence;
@@ -104,13 +107,13 @@ export interface EvidenceReceipt {
   independentReview: IndependentReview;
   evalResult: EvalResult;
   /** Digests and semantics are re-read from these structured files at delivery time. */
-  reviewEvidence?: FileEvidence;
-  evalEvidence?: FileEvidence;
-  artifactManifest?: FileEvidence;
+  reviewEvidence: FileEvidence;
+  evalEvidence: FileEvidence;
+  artifactManifest: FileEvidence;
   backend: StackBackendName;
   /** Optional request context; authorization may supply these independently. */
   projectReadiness?: ProjectReadiness;
-  origin?: DeliveryOrigin;
+  origin: DeliveryOrigin;
 }
 
 export type StackOperation =

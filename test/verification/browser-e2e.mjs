@@ -154,9 +154,9 @@ try {
 
   cleanupPassed = processes.every((process) => process.exitCode !== null);
   const result = await writeArtifactManifest(artifacts, {
-    screenshot,
-    accessibilityDomSnapshot: accessibility,
-    trace,
+    screenshot: "good.png",
+    accessibilityDomSnapshot: "accessibility.yaml",
+    trace: "trace.zip",
     cleanupResult: cleanupPassed ? "passed" : "failed",
   });
   assert.equal(artifactManifestContainsSecrets(result.manifest), false);

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { createJiti } from "jiti";
 
 const args = process.argv.slice(2);
@@ -11,7 +11,7 @@ const casePath = args.shift();
 assert.ok(casePath, "usage: grade-live-eval <case.json> <candidate-a> <candidate-b> [options]");
 const candidatePaths = [args.shift(), args.shift()];
 assert.ok(candidatePaths[0] && candidatePaths[1], "live eval requires exactly two candidates");
-assert.equal(args[0]?.startsWith("-"), true, "live eval requires exactly two candidates");
+assert.ok(args.length > 0, "live eval requires binding options");
 
 const options = {};
 for (let index = 0; index < args.length; index += 1) {
@@ -45,15 +45,9 @@ const grades = blind.map((candidate) => ({
 }));
 const byLabel = { "Candidate A": grades[0].grade, "Candidate B": grades[1].grade };
 
-let judge;
-if (options.judge) {
-  const source = await readFile(resolve(options.judge), "utf8").catch(() => options.judge);
-  judge = JSON.parse(source);
-} else {
-  // This is an explicit, reproducible judge decision, not an any-pass shortcut.
-  const winner = grades[0].grade.hardPassed ? "Candidate A" : "Candidate B";
-  judge = { winner, rationale: "Deterministic judge selected the hard-passing candidate." };
-}
+assert.ok(options.judge, "--judge is required; deterministic fallback judges are forbidden");
+const judgePath = resolve(options.judge);
+const judge = JSON.parse(await readFile(judgePath, "utf8"));
 assert.ok(
   judge &&
     (judge.winner === "Candidate A" || judge.winner === "Candidate B") &&
@@ -66,28 +60,50 @@ const aggregate = aggregateGrades(byLabel, judge);
 const skillPath = options.skill ?? process.env.TARGET_SKILL_PATH;
 assert.ok(skillPath, "--skill is required to bind eval evidence to the target skill");
 const skillAbsolute = resolve(skillPath);
-const skillDigest = createHash("sha256")
-  .update(await readFile(skillAbsolute))
-  .digest("hex");
 const repoIdentity = options.repo ?? process.env.REPO_IDENTITY;
 const headSha = options.head ?? process.env.HEAD_SHA;
 assert.ok(repoIdentity, "--repo is required to bind eval evidence to a repository");
 assert.ok(headSha, "--head is required to bind eval evidence to an exact HEAD");
 const targetRoot = options.root ? resolve(options.root) : process.cwd();
-const targetSkillPath = skillAbsolute.startsWith(`${targetRoot}/`)
-  ? skillAbsolute.slice(targetRoot.length + 1)
-  : skillAbsolute;
+function inside(path) {
+  const value = relative(targetRoot, resolve(path));
+  return value === "" || (value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value));
+}
+function evidenceFor(path) {
+  const absolute = resolve(path);
+  assert.ok(inside(absolute), `evidence path leaves repository: ${path}`);
+  return {
+    path: relative(targetRoot, absolute).replaceAll("\\", "/"),
+    sha256: createHash("sha256").update(requirements.get(absolute)).digest("hex"),
+  };
+}
+const requirements = new Map();
+for (const path of [resolve(casePath), ...candidatePaths.map(resolve), judgePath, skillAbsolute])
+  requirements.set(path, await readFile(path));
 
 const evidence = {
   version: 1,
   type: "eval-evidence",
   repoIdentity,
   headSha,
-  targetSkill: { path: targetSkillPath.replaceAll("\\", "/"), sha256: skillDigest },
+  caseId: evalCase.id,
+  evalCase: evidenceFor(casePath),
+  targetSkill: evidenceFor(skillAbsolute),
   candidates: [
-    { label: "Candidate A", current: true, grade: grades[0].grade },
-    { label: "Candidate B", current: false, grade: grades[1].grade },
+    {
+      label: "Candidate A",
+      current: true,
+      output: evidenceFor(candidatePaths[0]),
+      grade: grades[0].grade,
+    },
+    {
+      label: "Candidate B",
+      current: false,
+      output: evidenceFor(candidatePaths[1]),
+      grade: grades[1].grade,
+    },
   ],
+  judgeEvidence: evidenceFor(judgePath),
   judge,
   aggregate: {
     accepted: aggregate.accepted,

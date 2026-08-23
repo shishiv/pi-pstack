@@ -1,8 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
@@ -170,6 +167,9 @@ function receipt(overrides = {}) {
       status: "passed",
       evidence: { path: "eval.json", sha256: "e".repeat(64) },
     },
+    reviewEvidence: { path: "review-evidence.json", sha256: "f".repeat(64) },
+    evalEvidence: { path: "eval-evidence.json", sha256: "1".repeat(64) },
+    artifactManifest: { path: "artifact-manifest.json", sha256: "2".repeat(64) },
     backend: "gh-stack",
     projectReadiness: "ready",
     origin: "human",
@@ -247,41 +247,4 @@ test("negative controls fail closed for every delivery gate", () => {
   });
   assert.equal(bennyDraft.allowed, true);
   assert.equal(bennyDraft.draftOnly, true);
-});
-
-test("receipt evidence is hashed from disk and tampering is rejected", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pstack-receipt-"));
-  try {
-    for (const [path, content] of [
-      ["feature-map.md", "feature map"],
-      ["SKILL.md", "skill"],
-      ["review.md", "VERIFIED\n"],
-      ["eval.json", JSON.stringify({ grades: [{ grade: { hardPassed: true } }] })],
-      ["trace.zip", "trace"],
-    ]) {
-      await writeFile(join(root, path), content, "utf8");
-    }
-    const value = await delivery.createEvidenceReceiptFromFiles({
-      root,
-      repoIdentity: "acme/demo",
-      headSha: "abc123",
-      backend: "gh-stack",
-      origin: "human",
-      featureMapPath: "feature-map.md",
-      skillPath: "SKILL.md",
-      artifactPaths: [{ kind: "trace", path: "trace.zip" }],
-      reviewPath: "review.md",
-      reviewer: "reviewer",
-      evalPath: "eval.json",
-      deterministicChecks: {
-        status: "green",
-        checks: [{ name: "tests", status: "passed" }],
-      },
-    });
-    assert.deepEqual(await delivery.verifyEvidenceReceiptFiles(value, root), []);
-    await writeFile(join(root, "trace.zip"), "tampered", "utf8");
-    assert.match((await delivery.verifyEvidenceReceiptFiles(value, root)).join(";"), /digest/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
 });

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,7 +11,117 @@ const { restoreModeState, modeStateEntry } = await jiti.import("../../src/mode/s
 const { preflightCapabilities } = await jiti.import("../../src/capabilities/preflight.ts");
 const { resolveModelRoles } = await jiti.import("../../src/models/roles.ts");
 const { registerBennyAdapterProvider } = await jiti.import("../../src/benny/index.ts");
+const { gradeCandidate } = await jiti.import("../../src/evals/index.ts");
 const { default: potetoModeExtension } = await jiti.import("../../extensions/poteto-mode.ts");
+
+const digest = (value) => createHash("sha256").update(value).digest("hex");
+
+async function writeRuntimeEvidence(project, repoIdentity = "acme/demo", headSha = "abc123") {
+  const featureMap = `# Feature map: demo
+
+## feature: save
+- user goal: save a document
+- route: /editor
+- expected state: saved
+- broken state: not saved
+- prerequisites: none
+- evidence: screenshot, trace, cleanup
+`;
+  const skill = "---\nname: verify-demo\ndescription: Verify demo.\n---\n";
+  const rawReview = "independent review\nVERIFIED\n";
+  const evalCase = {
+    id: "receipt-runtime",
+    targetSkill: "verify-demo",
+    fixture: {},
+    input: { request: "prove it" },
+    requiredAssertions: [{ kind: "required-text", text: "OK" }],
+    prohibitedBehaviors: ["FORBIDDEN"],
+    dependencySkills: [],
+    evidenceExpectations: { required: [] },
+  };
+  const evalCaseText = JSON.stringify(evalCase);
+  const candidateA = "OK\n";
+  const candidateB = "not okay\n";
+  const judge = { winner: "Candidate A", rationale: "blind comparison" };
+  const judgeText = JSON.stringify(judge);
+  const files = [
+    ["feature-map.md", featureMap],
+    ["SKILL.md", skill],
+    ["raw-review.md", rawReview],
+    ["eval-case.json", evalCaseText],
+    ["candidate-a.txt", candidateA],
+    ["candidate-b.txt", candidateB],
+    ["judge.json", judgeText],
+    ["screenshot.png", "png"],
+    ["trace.zip", "trace"],
+  ];
+  for (const [path, content] of files) await writeFile(join(project, path), content, "utf8");
+  await writeFile(
+    join(project, "review.json"),
+    JSON.stringify({
+      version: 1,
+      type: "review-evidence",
+      repoIdentity,
+      headSha,
+      reviewer: "reviewer",
+      runId: "review-run",
+      verdict: "VERIFIED",
+      rawReview: { path: "raw-review.md", sha256: digest(rawReview) },
+    }),
+  );
+  const gradeA = gradeCandidate(evalCase, { text: candidateA });
+  const gradeB = gradeCandidate(evalCase, { text: candidateB });
+  await writeFile(
+    join(project, "eval.json"),
+    JSON.stringify({
+      version: 1,
+      type: "eval-evidence",
+      repoIdentity,
+      headSha,
+      caseId: evalCase.id,
+      evalCase: { path: "eval-case.json", sha256: digest(evalCaseText) },
+      targetSkill: { path: "SKILL.md", sha256: digest(skill) },
+      candidates: [
+        {
+          label: "Candidate A",
+          current: true,
+          output: { path: "candidate-a.txt", sha256: digest(candidateA) },
+          grade: gradeA,
+        },
+        {
+          label: "Candidate B",
+          current: false,
+          output: { path: "candidate-b.txt", sha256: digest(candidateB) },
+          grade: gradeB,
+        },
+      ],
+      judgeEvidence: { path: "judge.json", sha256: digest(judgeText) },
+      judge,
+      aggregate: {
+        accepted: true,
+        winner: "Candidate A",
+        reason: "Candidate A is the only candidate passing hard assertions.",
+      },
+    }),
+  );
+  await writeFile(
+    join(project, "artifact-manifest.json"),
+    JSON.stringify({
+      version: 1,
+      screenshot: "screenshot.png",
+      trace: "trace.zip",
+      cleanupResult: "passed",
+    }),
+  );
+  return {
+    backend: "gh-stack",
+    featureMapPath: "feature-map.md",
+    skillPath: "SKILL.md",
+    reviewPath: "review.json",
+    evalPath: "eval.json",
+    artifactManifestPath: "artifact-manifest.json",
+  };
+}
 
 function fakeRuntime({
   entries = [],
@@ -335,29 +446,11 @@ test("delivery tool requires receipts for every mutation and receipts are human-
     assert.match(rejected.content[0].text, /receipt/i, operation.operation);
   }
 
-  for (const [path, content] of [
-    ["feature-map.md", "# Feature map\n"],
-    ["SKILL.md", "---\nname: verify-demo\ndescription: Verify demo.\n---\n"],
-    ["review.md", "VERIFIED\n"],
-    ["eval.json", JSON.stringify({ grades: [{ grade: { hardPassed: true } }] })],
-    ["trace.zip", "trace"],
-  ]) {
-    await writeFile(join(project, path), content, "utf8");
-  }
+  const receiptParams = await writeRuntimeEvidence(project);
   const receiptTool = runtime.toolsByName.get("pstack_create_receipt");
   const created = await receiptTool.execute(
     "call-receipt",
-    {
-      backend: "gh-stack",
-      origin: "benny",
-      featureMapPath: "feature-map.md",
-      skillPath: "SKILL.md",
-      reviewPath: "review.md",
-      reviewer: "reviewer",
-      evalPath: "eval.json",
-      artifactPaths: [{ kind: "trace", path: "trace.zip" }],
-      checkCommands: [{ name: "tests", command: "node", args: ["--version"] }],
-    },
+    receiptParams,
     undefined,
     undefined,
     runtime.ctx,
@@ -415,9 +508,8 @@ test("receipt creation rejects tracked changes before writing evidence", async (
         featureMapPath: "feature-map.md",
         skillPath: "SKILL.md",
         reviewPath: "review.md",
-        reviewer: "reviewer",
         evalPath: "eval.json",
-        artifactPaths: [{ kind: "trace", path: "trace.zip" }],
+        artifactManifestPath: "artifact-manifest.json",
       },
       undefined,
       undefined,
@@ -444,7 +536,7 @@ test("delivery revalidates receipt semantics before checking file digests", asyn
   try {
     await mkdir(join(project, ".pi", "pstack", "receipts"), { recursive: true });
     const path = join(project, ".pi", "pstack", "receipts", "bad.json");
-    await writeFile(path, JSON.stringify({ version: 999 }), "utf8");
+    await writeFile(path, JSON.stringify({ version: 999, headSha: "abc123" }), "utf8");
     const result = await runtime.toolsByName.get("pstack_delivery").execute(
       "invalid",
       {
@@ -466,6 +558,14 @@ test("delivery revalidates receipt semantics before checking file digests", asyn
 test("auto-merge binds a verified receipt to the live pull request head and checks", async () => {
   const project = await mkdtemp(join(tmpdir(), "pstack-merge-tool-"));
   let pullRequestHead = "abc123";
+  let stackBranches = [
+    {
+      name: "feature",
+      head: "abc123",
+      isMerged: false,
+      pr: { number: 42, state: "OPEN" },
+    },
+  ];
   const calls = [];
   const runtime = fakeRuntime({
     exec: async (command, args) => {
@@ -475,6 +575,13 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
       if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
       if (command === "gh" && args[0] === "repo")
         return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
+      if (command === "gh" && args[0] === "stack" && args[1] === "view")
+        return {
+          code: 0,
+          stdout: JSON.stringify({ branches: stackBranches }),
+          stderr: "",
+          killed: false,
+        };
       if (command === "gh" && args[0] === "pr")
         return {
           code: 0,
@@ -492,32 +599,10 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
   });
   runtime.ctx.cwd = project;
   try {
-    for (const [path, content] of [
-      ["feature-map.md", "# Feature map\n"],
-      ["SKILL.md", "---\nname: verify-demo\ndescription: Verify demo.\n---\n"],
-      ["review.md", "VERIFIED\n"],
-      ["eval.json", JSON.stringify({ grades: [{ grade: { hardPassed: true } }] })],
-      ["trace.zip", "trace"],
-    ]) {
-      await writeFile(join(project, path), content, "utf8");
-    }
-    const receipt = await runtime.toolsByName.get("pstack_create_receipt").execute(
-      "receipt",
-      {
-        backend: "gh-stack",
-        origin: "human",
-        featureMapPath: "feature-map.md",
-        skillPath: "SKILL.md",
-        reviewPath: "review.md",
-        reviewer: "reviewer",
-        evalPath: "eval.json",
-        artifactPaths: [{ kind: "trace", path: "trace.zip" }],
-        checkCommands: [{ name: "tests", command: "node", args: ["--version"] }],
-      },
-      undefined,
-      undefined,
-      runtime.ctx,
-    );
+    const receiptParams = await writeRuntimeEvidence(project);
+    const receipt = await runtime.toolsByName
+      .get("pstack_create_receipt")
+      .execute("receipt", receiptParams, undefined, undefined, runtime.ctx);
     const delivered = await runtime.toolsByName.get("pstack_delivery").execute(
       "merge",
       {
@@ -536,6 +621,42 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
       true,
     );
 
+    stackBranches = [
+      {
+        name: "foundation",
+        head: "def456",
+        isMerged: false,
+        pr: { number: 41, state: "OPEN" },
+      },
+      {
+        name: "feature",
+        head: "abc123",
+        isMerged: false,
+        pr: { number: 42, state: "OPEN" },
+      },
+    ];
+    const incompleteStack = await runtime.toolsByName.get("pstack_delivery").execute(
+      "merge-incomplete-stack",
+      {
+        backend: "gh-stack",
+        operation: "auto-merge",
+        pullRequest: "42",
+        receiptPath: receipt.details.path,
+      },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+    assert.match(incompleteStack.content[0].text, /missing exact-head receipts.*#41/i);
+
+    stackBranches = [
+      {
+        name: "feature",
+        head: "abc123",
+        isMerged: false,
+        pr: { number: 42, state: "OPEN" },
+      },
+    ];
     pullRequestHead = "different";
     const mergesBefore = calls.filter((argv) => argv.includes("merge")).length;
     const rejected = await runtime.toolsByName.get("pstack_delivery").execute(
