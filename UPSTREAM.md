@@ -1,6 +1,6 @@
 # Upstream provenance
 
-This repository is a Pi-native derivative of `pstack` from [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack).
+This repository is a Pi-native derivative of [`pstack`](https://github.com/cursor/plugins/tree/main/pstack), created by [Lauren Tan (@poteto)](https://github.com/poteto) and published in [`cursor/plugins`](https://github.com/cursor/plugins).
 
 - Upstream version: `0.14.2`
 - Upstream commit: `46125561306434d8a1d7745d540d8932ab0cd2a2`

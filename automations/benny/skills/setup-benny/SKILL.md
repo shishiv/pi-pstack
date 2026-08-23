@@ -31,13 +31,13 @@ Merge the entire source pack into the destination:
 
 If this file is already being read from the target destination, treat the copy as complete and run the same verification before continuing.
 
-Install pstack for the target repository with `pi install -l <pinned-package-source>`. Use the private SSH URL and a pinned tag or commit. Let the Pi CLI own `.pi/settings.json`; do not hand-edit package-manager state.
+Install pstack for the target repository with `pi install -l <pinned-package-source>`. Use the public HTTPS URL and a pinned tag or commit. Let the Pi CLI own `.pi/settings.json`; do not hand-edit package-manager state.
 
 The Pi CLI writes the project package entry and preserves unrelated settings. Verify that the resulting `packages` entry points at the pinned source selected above.
 
 ```json
 {
-	"packages": ["ssh://git@github.com/shishiv/pi-pstack@<pinned-ref>"]
+	"packages": ["https://github.com/shishiv/pi-pstack@<pinned-ref>"]
 }
 ```
 
