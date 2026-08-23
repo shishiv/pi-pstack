@@ -44,6 +44,7 @@ export function buildLocalMultiModelWorkflowPlan(
     key: candidate.key,
     role: candidate.role ?? ("implement" as const),
     task: taskFor(options.evalCase, candidate),
+    model: candidate.model,
   }));
   const script = buildParallelFanoutWorkflowScript(children);
   validateWorkflowScript(script);

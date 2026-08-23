@@ -31,8 +31,10 @@ test("workflow builders emit supported, awaited APIs and safely serialized input
     key: "single",
     role: "implement",
     task: hostile,
+    model: "provider/model",
   });
   assert.match(one, /^return runs\.run\("single",\{agent:"worker",task:/);
+  assert.match(one, /model:"provider\/model"/);
   assert.match(one, /await|return runs\.run/);
   assert.doesNotMatch(one, /evil", \{agent/);
   assert.doesNotThrow(() => workflows.validateWorkflowScript(one));

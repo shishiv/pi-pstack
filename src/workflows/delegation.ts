@@ -35,6 +35,7 @@ export interface ChildTask {
   task: string;
   role?: WorkflowRole;
   agent?: WorkflowAgent;
+  model?: string;
   worktree?: boolean;
   readOnly?: boolean;
 }
@@ -71,6 +72,7 @@ function runParams(child: ChildTask, taskExpression = quote(child.task)): string
   validateKey(child.key);
   const agent = childAgent(child);
   const fields = [`agent:${quote(agent)}`, `task:${taskExpression}`];
+  if (child.model !== undefined) fields.push(`model:${quote(child.model)}`);
   if (child.worktree !== undefined) fields.push(`worktree:${String(child.worktree)}`);
   return `{${fields.join(",")}}`;
 }

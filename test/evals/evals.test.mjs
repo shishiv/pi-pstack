@@ -18,11 +18,19 @@ test("strictly validates eval schema and rejects unknown fields", () => {
   assert.match(result.errors.join(";"), /unexpected.*not allowed/);
 });
 
-test("deterministic hard assertions accept known-good and reject broken candidate", () => {
+test("deterministic hard assertions accept the known-good candidate", () => {
   const evalCase = evals.assertValidEvalCase(caseValue) || caseValue;
   const goodGrade = evals.gradeCandidate(evalCase, good);
-  const brokenGrade = evals.gradeCandidate(evalCase, broken);
   assert.equal(goodGrade.passed, true);
+  assert.equal(
+    goodGrade.assertions.every((item) => item.passed),
+    true,
+  );
+});
+
+test("deterministic hard assertions reject the broken candidate", () => {
+  const evalCase = evals.assertValidEvalCase(caseValue) || caseValue;
+  const brokenGrade = evals.gradeCandidate(evalCase, broken);
   assert.equal(brokenGrade.passed, false);
   assert.ok(brokenGrade.assertions.some((item) => !item.passed));
 });
@@ -76,5 +84,6 @@ test("workflow plan uses existing fanout builder and does not execute models", (
   });
   assert.equal(plan.executesModels, false);
   assert.match(plan.script, /runs\.all/);
-  assert.doesNotMatch(plan.script, /provider-a|provider-b/);
+  assert.match(plan.script, /provider-a\/model-a/);
+  assert.match(plan.script, /provider-b\/model-b/);
 });
