@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
@@ -16,6 +16,14 @@ test("strictly validates eval schema and rejects unknown fields", () => {
   const result = evals.validateEvalCase(invalid);
   assert.equal(result.valid, false);
   assert.match(result.errors.join(";"), /unexpected.*not allowed/);
+});
+
+test("every committed eval case satisfies the strict schema", async () => {
+  const files = (await readdir("evals/cases")).filter((name) => name.endsWith(".json"));
+  for (const file of files) {
+    const value = JSON.parse(await readFile(`evals/cases/${file}`, "utf8"));
+    assert.equal(evals.validateEvalCase(value).valid, true, file);
+  }
 });
 
 test("deterministic hard assertions accept the known-good candidate", () => {
