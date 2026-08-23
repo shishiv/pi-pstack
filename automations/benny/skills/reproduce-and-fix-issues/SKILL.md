@@ -259,7 +259,7 @@ Confirm the mechanism with runtime evidence. Eliminate competing hypotheses befo
 
 Fix the root cause with the smallest justified change.
 
-- Invoke pstack's `tdd` skill when there is a cheap local test target, and write the failing test before the fix.
+- Invoke pstack's `pstack-tdd` skill when there is a cheap local test target, and write the failing test before the fix.
 - State why TDD was skipped when the path is expensive, unclear, or integration-heavy.
 - Keep unrelated cleanup out.
 - Stop if the change grows beyond the configured effort or risk budget.

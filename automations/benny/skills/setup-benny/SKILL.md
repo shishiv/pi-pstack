@@ -47,7 +47,7 @@ Reload the target project or start a fresh agent rooted there. Verify that these
 
 - `how`
 - `why`
-- `tdd`
+- `pstack-tdd`
 - `unslop`
 - `principle-separate-before-serializing-shared-state`
 - `principle-minimize-reader-load`

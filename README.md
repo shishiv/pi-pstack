@@ -43,7 +43,7 @@ pi install npm:pi-mcp-adapter@2.27.0
 Instale uma tag ou commit fixo deste repositório:
 
 ```bash
-pi install https://github.com/shishiv/pi-pstack@v0.1.0
+pi install https://github.com/shishiv/pi-pstack@v0.2.0
 ```
 
 Para instalar somente no projeto atual, acrescente `-l`. O pacote é distribuído por Git e não é publicado no registry do npm.
@@ -62,9 +62,14 @@ As demais skills seguem a sintaxe nativa do Pi:
 ```text
 /skill:how
 /skill:interrogate
+/skill:pstack-tdd
+/skill:pstack-teach
+/skill:pstack-reflect
 /skill:create-verification-skill
 /skill:maintain-verification-skill
 ```
+
+As skills `pstack-tdd`, `pstack-teach` e `pstack-reflect` usam prefixo para coexistir com skills globais de mesmo propósito.
 
 O modo sticky vale somente para a sessão ativa. O Pi restaura o estado pelo histórico da própria branch da sessão e não altera configurações globais.
 

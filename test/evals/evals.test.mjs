@@ -47,7 +47,7 @@ test("selection includes dependent cases and transitive dependents", () => {
   const transitive = {
     ...dependent,
     id: "transitive",
-    targetSkill: "reflect",
+    targetSkill: "pstack-reflect",
     dependencySkills: ["show-me-your-work"],
   };
   const selected = evals.selectEvalCases(["how"], [caseValue, dependent, transitive]);
