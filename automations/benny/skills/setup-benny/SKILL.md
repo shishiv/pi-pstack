@@ -6,17 +6,17 @@ disable-model-invocation: true
 
 # Set up Benny
 
-Benny ships as a dormant automation pack inside pstack. The plugin manifest exposes only pstack's normal skill root; this file and the two operational files are not slash skills.
+Benny ships as a dormant automation pack inside pstack. The Pi package manifest exposes only pstack's normal skill root; this file and the two operational files are not slash skills.
 
 The human enters setup by pointing Pi at the pack's `FOR_AGENTS.md`. The bootstrap flow copies the whole pack into the target repository, then reads this file directly at `.pi/pstack/benny/skills/setup-benny/SKILL.md`.
 
 Benny needs external configuration and two live Pi scheduled workflows.
 
-Do not create or update an automation until the user explicitly asks. Never put a secret value in plugin files, prompts, or committed configuration.
+Do not create or update an automation until the user explicitly asks. Never put a secret value in package files, prompts, or committed configuration.
 
 ## 1. Copy the pack and enable shared pstack skills
 
-Do this before asking for Benny configuration and before invoking the built-in `Pi workflow setup` skill.
+Do this before asking for Benny configuration and before creating Pi schedules.
 
 Ask which repository will run the automations. The source pack is the directory containing `FOR_AGENTS.md`. The destination is `<target-repository>/.pi/pstack/benny/`.
 
@@ -31,19 +31,17 @@ Merge the entire source pack into the destination:
 
 If this file is already being read from the target destination, treat the copy as complete and run the same verification before continuing.
 
-Add pstack to the target repository's `.pi/settings.json`. If the file or `.Pi` directory does not exist, create it.
+Install pstack for the target repository with `pi install -l <pinned-package-source>`. Use the private SSH URL and a pinned tag or commit. Let the Pi CLI own `.pi/settings.json`; do not hand-edit package-manager state.
 
-Merge this entry into the existing JSON or JSONC:
+The Pi CLI writes the project package entry and preserves unrelated settings. Verify that the resulting `packages` entry points at the pinned source selected above.
 
 ```json
 {
-	"plugins": {
-		"pstack": { "enabled": true }
-	}
+	"packages": ["ssh://git@github.com/shishiv/pi-pstack@<pinned-ref>"]
 }
 ```
 
-Preserve every unrelated top-level setting and every other plugin entry. If `plugins.pstack` already exists, change only its `enabled` value. Preserve comments and valid JSONC syntax when the file uses JSONC. Validate the file after editing it.
+The Pi CLI writes this package entry and preserves unrelated settings. Verify that it points at the pinned source selected above.
 
 Reload the target project or start a fresh agent rooted there. Verify that these shared pstack skills resolve from project scope:
 
@@ -60,9 +58,9 @@ Reload the target project or start a fresh agent rooted there. Verify that these
 
 Do not count a skill loaded from the current session or a user-scoped plugin. The check must show that a fresh agent in the target repository receives pstack through project settings.
 
-If project-scoped plugin installation is unavailable or any shared dependency does not resolve, stop and explain the failure.
+If project-scoped package installation is unavailable or any shared dependency does not resolve, stop and explain the failure.
 
-The Benny files are read directly from `.pi/pstack/benny/`. Do not add that directory to a plugin manifest or expect its `SKILL.md` files to appear in the slash-skill list.
+The Benny files are read directly from `.pi/pstack/benny/`. Do not add that directory to the package manifest or expect its `SKILL.md` files to appear in the slash-skill list.
 
 Tell the user that `.pi/settings.json`, `.pi/pstack/benny/`, and any referenced secret-free configuration must be committed before either automation is enabled. Do not commit them unless the user asks.
 
@@ -77,9 +75,9 @@ Open these copied examples:
 
 Create user-owned copies outside `.pi/pstack/benny/`. These are configuration files, not pack files. Example locations:
 
-- Project config, such as `.pi/benny/configuration.yaml`
-- Project feature map, such as `.pi/benny/feature-map.md`
-- Project routing map, such as `.pi/benny/routing.md`
+- Project config, such as `.pi/pstack/benny-config/configuration.yaml`
+- Project feature map, such as `.pi/pstack/benny-config/feature-map.md`
+- Project routing map, such as `.pi/pstack/benny-config/routing.md`
 - User config, such as `~/.config/benny/configuration.yaml`
 - User feature map, such as `~/.config/benny/feature-map.md`
 
@@ -87,9 +85,9 @@ Fill one feature-map section for every user-facing feature the automation may re
 
 Do not edit the copied examples. Pack refreshes may update source-managed files after conflict review, but they must never touch the user-owned copies.
 
-Prefer committed, secret-free files in the target repository when a fresh automation checkout must read them. Otherwise paraphrase the required values into the live prompt. Reference a repository file only after the built-in `Pi workflow setup` skill confirms that the file is committed in the repository where the automation runs.
+Prefer committed, secret-free files when a fresh scheduled run must read them. Otherwise pass the required values through approved runtime configuration. Reference a repository file only after confirming that it is committed in the repository where the schedule runs.
 
-Use stable repository-relative paths for committed pack and configuration files. Never reference the plugin source directory or a plugin cache path from a live automation.
+Use stable repository-relative paths for committed pack and configuration files. Never reference the package source directory or package cache path from a live automation.
 
 ## 3. Fill the required choices
 
@@ -109,7 +107,7 @@ Ask for or confirm:
 - Polling and effort budgets
 - Model slug for triage, repro, code work, and media review
 
-Use only model slugs shown as available in the user's Pi model picker or supported model list. Do not guess a slug and do not carry over a private default.
+Use only provider-qualified models resolved by the active Pi model profile. Do not guess a model ID or copy a provider-specific default from upstream.
 
 The source channel, triage identity, repository, tracker adapter, control skill, and feature map must be explicit. Fail setup if any required value stays ambiguous.
 
@@ -180,13 +178,14 @@ For each automation:
 2. Turn `FOR_AGENTS.md`, the finished Benny configuration, and the template intent into a complete natural-language request.
 3. Tell the live prompt to read and follow its exact committed operational file under `.pi/pstack/benny/`.
 4. Use the stable repository-relative path, not a plugin source or cache path. Do not copy the operational file contents into the live prompt.
-5. Read and follow the built-in `automate` skill.
-6. Let `automate` discover Slack channels, the repository, and connected integrations.
-7. Let `automate` confirm that the copied pack and any referenced configuration files are committed in the same repository where the automation will run.
-8. Let `automate` show its draft table, obtain approval, ask readiness, and open the Automations editor.
-9. Finish the editor handoff for this automation before starting the next one.
+5. Validate the matching `*.workflow.json` definition.
+6. Resolve Slack, repository, tracker, and control integrations through capability preflight.
+7. Confirm that the copied pack and referenced configuration files are committed in the repository where the schedule will run.
+8. Show the final schedule payload and obtain approval.
+9. Create the schedule through `subagent` `schedule.create` with `overlap: "skip"` and `catchUp: "latest"`.
+10. Verify the saved schedule before preparing the next one.
 
-Give `automate` this complete triage intent, filled from configuration:
+Give the triage schedule this complete intent, filled from configuration:
 
 - Name `benny-triage`.
 - Read and follow `.pi/pstack/benny/skills/triage-issue-reports/SKILL.md` for every run.
@@ -197,7 +196,7 @@ Give `automate` this complete triage intent, filled from configuration:
 - End one thread-only verdict with the configured `[benny:bug]`, `[benny:performance]`, or `[benny:other]` marker and optional tracker URL.
 - Never post a source-channel root message.
 
-After the triage editor handoff is complete, give `automate` this complete repro and fix intent:
+After the triage schedule is verified, give the reproduce schedule this complete intent:
 
 - Name `benny-reproduce`.
 - Read and follow `.pi/pstack/benny/skills/reproduce-and-fix-issues/SKILL.md` for every run.
@@ -211,11 +210,11 @@ After the triage editor handoff is complete, give `automate` this complete repro
 - Attempt an optional bounded fix only after confirmed repro, then open a draft pull request when proof and checks pass.
 - Never post a source-channel root message.
 
-Do not duplicate `automate`'s Slack, repository, integration, completeness, authentication, draft-review, approval, readiness, or editor-handoff work.
+Do not create a schedule until every referenced capability and path passes preflight.
 
 ### Existing automations
 
-The built-in `automate` skill is creation-only. Do not use it to search for, inspect, or update existing automations.
+Use Pi schedule list, show, pause, resume, run, and delete actions to inspect or update existing Benny schedules. Do not create duplicates.
 
 Finish configuration, routing, control-adapter, and feature-map validation. Then give the user this concise editor checklist.
 
@@ -243,9 +242,7 @@ Ask the user to update each existing automation directly in its Automations edit
 
 ### Creation boundary
 
-Never call a direct automation backend service or backend automation tool. Never use a browser URL that carries draft fields. Never build or open a Pi protocol deep link. For new automations, the only finish path is the built-in `automate` skill's reviewed Automations editor handoff.
-
-Do not enable either automation until the thread-safety test passes after the editor save.
+Create schedules only through Pi's `subagent` schedule API after the user approves the final payload. Do not enable either schedule until the thread-safety test passes and `schedule.show` confirms the saved definition.
 
 ## 8. Test thread safety
 

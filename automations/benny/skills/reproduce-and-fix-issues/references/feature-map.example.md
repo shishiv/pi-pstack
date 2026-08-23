@@ -2,7 +2,7 @@
 
 Map every user-facing feature Benny may reproduce. Read the relevant section before driving the app. Keep this map at the user point of view. Discover internals and current code paths at runtime instead of freezing them here.
 
-Copy this file outside `.pi/pstack/benny/`, for example to `.pi/benny/feature-map.md`, and set `control.featureMapPath` to the copy. Pack refreshes must not overwrite it.
+Copy this file outside `.pi/pstack/benny/`, for example to `.pi/pstack/benny-config/feature-map.md`, and set `control.featureMapPath` to the copy. Pack refreshes must not overwrite it.
 
 ## Per-feature template
 

@@ -39,14 +39,14 @@ tracker:
   requireCompensationAction: true
 
 routing:
-  mapPath: ".pi/benny/routing.md"
+  mapPath: ".pi/pstack/benny-config/routing.md"
   ownerPingsDefault: false
   allowFeatureOwnerPing: false
   allowConfirmedRegressionAuthorPing: false
 
 control:
   adapter: "control-target-app"
-  featureMapPath: ".pi/benny/feature-map.md"
+  featureMapPath: ".pi/pstack/benny-config/feature-map.md"
   environment: "safe-test-environment-placeholder"
   artifactDirectory: "/tmp/benny-artifacts"
   artifactRetentionHours: 24

@@ -28,7 +28,7 @@ const config = {
   repository: { url: "https://github.com/acme/app", defaultBranch: "main", draftOnly: true },
   control: {
     adapter: "control",
-    featureMapPath: ".pi/benny/features.md",
+    featureMapPath: ".pi/pstack/benny-config/feature-map.md",
     environment: "test",
     artifactDirectory: "/tmp/benny",
   },
