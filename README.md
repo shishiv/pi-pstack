@@ -66,6 +66,8 @@ O modo sticky vale somente para a sessão ativa. Ele é restaurado pelo históri
 
 `gh stack` é o backend padrão. O adapter Graphite só aparece quando `gt` está instalado. O pacote apenas traduz operações para os CLIs oficiais. Ele não mantém um segundo grafo de branches.
 
+O merge atômico exige um receipt por PR até o alvo. Gere cada receipt no checkout limpo do respectivo `HEAD` e mantenha os artifacts em caminhos imutáveis disponíveis durante a validação final. Se um digest de uma camada anterior não estiver disponível no checkout atual, o merge falha fechado.
+
 ## Benny
 
 Benny é instalado por projeto em `.pi/pstack/benny/`. Sua configuração fica separada em `.pi/pstack/benny-config/`.

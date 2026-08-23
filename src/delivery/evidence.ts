@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import {
@@ -46,7 +47,11 @@ function evidencePath(root: string, input: string): string {
     throw new Error("evidence path is required");
   const path = resolve(root, input);
   if (!inside(root, path)) throw new Error(`evidence path leaves repository: ${input}`);
-  return path;
+  const realRoot = realpathSync(resolve(root));
+  const realPath = realpathSync(path);
+  if (!inside(realRoot, realPath))
+    throw new Error(`evidence path resolves outside repository: ${input}`);
+  return realPath;
 }
 
 async function sha256(path: string): Promise<string> {
@@ -236,8 +241,19 @@ export interface EvidenceReceiptFilesInput {
   };
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (object(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return canonicalJson(left) === canonicalJson(right);
 }
 
 async function verifiedFile(root: string, expected: FileEvidence, label: string): Promise<string> {

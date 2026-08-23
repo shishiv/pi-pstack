@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
@@ -213,6 +213,19 @@ test("creation rejects missing declared artifacts and paths outside root", async
     );
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("evidence paths reject symlinks that resolve outside the repository", async () => {
+  const { root } = await fixture();
+  const outside = await mkdtemp(join(tmpdir(), "pstack-outside-evidence-"));
+  try {
+    await writeFile(join(outside, "secret.txt"), "outside");
+    await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
+    await assert.rejects(delivery.fileEvidence(root, "linked.txt"), /resolves outside repository/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
   }
 });
 

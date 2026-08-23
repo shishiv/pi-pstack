@@ -565,12 +565,14 @@ async function verifyPullRequestState(
 /** Flatten shell-like and structured tool payloads before applying merge gates. */
 function normalizeToolCallInput(input: unknown): string {
   const values: string[] = [];
-  const visit = (value: unknown): void => {
+  const seen = new WeakSet<object>();
+  const visit = (value: unknown, depth = 0): void => {
+    if (depth > 32) return;
     if (typeof value === "string") {
       const trimmed = value.trim();
       if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1) {
         try {
-          visit(JSON.parse(trimmed));
+          visit(JSON.parse(trimmed), depth + 1);
           return;
         } catch {
           // Preserve command strings that happen to contain malformed JSON.
@@ -580,16 +582,20 @@ function normalizeToolCallInput(input: unknown): string {
       return;
     }
     if (Array.isArray(value)) {
-      value.forEach(visit);
+      if (seen.has(value)) return;
+      seen.add(value);
+      value.forEach((item) => visit(item, depth + 1));
       return;
     }
     if (value && typeof value === "object") {
+      if (seen.has(value)) return;
+      seen.add(value);
       const record = value as Record<string, unknown>;
       for (const key of ["command", "argv", "args"]) {
-        if (key in record) visit(record[key]);
+        if (key in record) visit(record[key], depth + 1);
       }
       for (const [key, child] of Object.entries(record)) {
-        if (key !== "command" && key !== "argv" && key !== "args") visit(child);
+        if (key !== "command" && key !== "argv" && key !== "args") visit(child, depth + 1);
       }
     }
   };
@@ -614,7 +620,7 @@ function containsDirectMerge(command: string): boolean {
 }
 
 function pullRequestChecksPass(
-  checks: readonly { conclusion?: string; state?: string; status?: string }[],
+  checks: readonly { conclusion?: string; state?: string }[],
 ): boolean {
   if (checks.length === 0) return false;
   return checks.every((check) => {
