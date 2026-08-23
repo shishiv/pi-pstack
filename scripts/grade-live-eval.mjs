@@ -32,4 +32,4 @@ assert.ok(
   "no candidate passed hard assertions",
 );
 process.stdout.write(`${JSON.stringify({ case: evalCase.id, grades }, null, 2)}\n`);
-console.log("live eval verification passed");
+console.error("live eval verification passed");

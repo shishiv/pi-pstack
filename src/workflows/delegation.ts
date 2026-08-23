@@ -7,6 +7,7 @@ export const ROLE_TO_AGENT = {
   review: "reviewer",
   judge: "oracle",
   style: "poteto-agent",
+  benny: "benny-coordinator",
 } as const;
 
 export type WorkflowRole = keyof typeof ROLE_TO_AGENT;
@@ -24,7 +25,10 @@ export function agentForRole(
   options: AgentResolutionOptions = {},
 ): WorkflowAgent {
   const agent = ROLE_TO_AGENT[role];
-  if (options.readOnly && (agent === "worker" || agent === "poteto-agent")) {
+  if (
+    options.readOnly &&
+    (agent === "worker" || agent === "poteto-agent" || agent === "benny-coordinator")
+  ) {
     throw new Error(`Role '${role}' cannot be resolved for a read-only workflow.`);
   }
   return agent;
@@ -62,7 +66,10 @@ function childAgent(child: ChildTask): WorkflowAgent {
     return resolved;
   }
   const agent = child.agent ?? "worker";
-  if (child.readOnly && (agent === "worker" || agent === "poteto-agent")) {
+  if (
+    child.readOnly &&
+    (agent === "worker" || agent === "poteto-agent" || agent === "benny-coordinator")
+  ) {
     throw new Error("A read-only workflow cannot use worker or poteto-agent.");
   }
   return agent;
@@ -73,7 +80,10 @@ function runParams(child: ChildTask, taskExpression = quote(child.task)): string
   const agent = childAgent(child);
   const fields = [`agent:${quote(agent)}`, `task:${taskExpression}`];
   if (child.model !== undefined) fields.push(`model:${quote(child.model)}`);
-  if (child.worktree !== undefined) fields.push(`worktree:${String(child.worktree)}`);
+  if (child.worktree !== undefined) {
+    if (typeof child.worktree !== "boolean") throw new Error("worktree must be boolean");
+    fields.push(`worktree:${child.worktree ? "true" : "false"}`);
+  }
   return `{${fields.join(",")}}`;
 }
 

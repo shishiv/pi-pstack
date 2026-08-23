@@ -273,6 +273,11 @@ export function validateFeatureMap(map: unknown): FeatureMapValidation {
       if (value !== undefined) requireSingleLine(value, `${prefix}.accessible.${name}`, errors);
     if (!item.evidence || typeof item.evidence !== "object")
       errors.push(`${prefix}.evidence is required`);
+    else {
+      const enabled = Object.values(item.evidence).filter((value) => value === true).length;
+      if (enabled === 0) errors.push(`${prefix}.evidence must require at least one artifact`);
+      if (item.evidence.cleanup !== true) errors.push(`${prefix}.evidence.cleanup must be true`);
+    }
     if (item.expectedState === item.brokenState && text(item.expectedState))
       errors.push(`${prefix} expectedState and brokenState must differ`);
   }

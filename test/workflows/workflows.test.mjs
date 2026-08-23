@@ -18,6 +18,7 @@ test("semantic roles map to Pi agents and preserve read-only boundaries", () => 
   assert.equal(workflows.agentForRole("review"), "reviewer");
   assert.equal(workflows.agentForRole("judge"), "oracle");
   assert.equal(workflows.agentForRole("style"), "poteto-agent");
+  assert.equal(workflows.agentForRole("benny"), "benny-coordinator");
   for (const role of ["explore", "research", "review", "judge"]) {
     assert.notEqual(workflows.agentForRole(role, { readOnly: true }), "worker");
     assert.notEqual(workflows.agentForRole(role, { readOnly: true }), "poteto-agent");
@@ -58,6 +59,16 @@ test("workflow builders emit supported, awaited APIs and safely serialized input
   assert.match(parallel, /key:"b"/);
   assert.doesNotMatch(parallel, /runs\.run\(/);
   assert.doesNotThrow(() => workflows.validateWorkflowScript(parallel));
+  assert.throws(
+    () =>
+      workflows.buildSingleChildWorkflowScript({
+        key: "unsafe",
+        role: "implement",
+        task: "work",
+        worktree: "false,task:'injected'",
+      }),
+    /worktree must be boolean/,
+  );
 });
 
 test("evidence mapping keeps unavailable MCP categories as explicit gaps", () => {

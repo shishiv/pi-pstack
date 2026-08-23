@@ -54,6 +54,12 @@ test("validation reports missing required fields and duplicate IDs", () => {
   const injected = structuredClone(fixture);
   injected.features[0].userGoal = "Save safely\n## feature: injected";
   assert.equal(verification.validateFeatureMap(injected).valid, false);
+  const noEvidence = structuredClone(fixture);
+  noEvidence.features[0].evidence = {};
+  assert.match(
+    verification.validateFeatureMap(noEvidence).errors.join(";"),
+    /at least one artifact|cleanup/,
+  );
 });
 
 test("project skill generation is idempotent and rejects path traversal", async () => {
