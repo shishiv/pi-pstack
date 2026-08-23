@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
@@ -243,6 +243,31 @@ test("creation rejects a target skill digest that does not match the receipt ski
     value.targetSkill.sha256 = "f".repeat(64);
     await writeFile(evalPath, JSON.stringify(value));
     await assert.rejects(create(root), /target skill/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("artifact paths resolve relative to a nested manifest", async () => {
+  const { root } = await fixture();
+  try {
+    await mkdir(join(root, "proof"));
+    await writeFile(join(root, "proof", "screenshot.png"), "nested png");
+    await writeFile(join(root, "proof", "trace.zip"), "nested trace");
+    await writeFile(
+      join(root, "proof", "manifest.json"),
+      JSON.stringify({
+        version: 1,
+        screenshot: "screenshot.png",
+        trace: "trace.zip",
+        cleanupResult: "passed",
+      }),
+    );
+    const receipt = await create(root, { artifactManifestPath: "proof/manifest.json" });
+    assert.deepEqual(receipt.liveVerificationArtifacts.map((artifact) => artifact.path).sort(), [
+      "proof/screenshot.png",
+      "proof/trace.zip",
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

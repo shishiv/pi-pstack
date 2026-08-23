@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
   aggregateGrades,
   gradeCandidate,
@@ -203,6 +203,11 @@ function manifestPath(manifest: ArtifactManifest, kind: string): string | undefi
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+function manifestArtifactPath(manifestEvidencePath: string, value: string): string {
+  if (isAbsolute(value)) return value;
+  return resolve(dirname(manifestEvidencePath), value);
+}
+
 const MANIFEST_ARTIFACT_KINDS = [
   "screenshot",
   "accessibilityDomSnapshot",
@@ -384,14 +389,27 @@ export async function createEvidenceReceiptFromFiles(
   for (const kind of requiredKinds) {
     const path = manifestPath(manifest, kind);
     if (!path) throw new Error(`artifact manifest is missing required artifact kind: ${kind}`);
-    artifacts.push({ kind, ...(await fileEvidence(input.root, path)) });
+    artifacts.push({
+      kind,
+      ...(await fileEvidence(
+        input.root,
+        manifestArtifactPath(evidencePath(input.root, manifestEvidence.path), path),
+      )),
+    });
   }
   // Do not leave an optional manifest reference unbound: every referenced file
   // must be hashed, even when the current feature map does not require it.
   for (const kind of MANIFEST_ARTIFACT_KINDS) {
     if (!requiredKinds.has(kind)) {
       const path = manifestPath(manifest, kind);
-      if (path) artifacts.push({ kind, ...(await fileEvidence(input.root, path)) });
+      if (path)
+        artifacts.push({
+          kind,
+          ...(await fileEvidence(
+            input.root,
+            manifestArtifactPath(evidencePath(input.root, manifestEvidence.path), path),
+          )),
+        });
     }
   }
   const independentReview: IndependentReview = {
@@ -475,7 +493,10 @@ async function validateStructuredFiles(receipt: EvidenceReceipt, root: string): 
       }
       const artifact = receiptArtifacts.get(kind);
       if (!artifact) throw new Error(`receipt is missing artifact kind: ${kind}`);
-      const actual = await fileEvidence(root, path);
+      const actual = await fileEvidence(
+        root,
+        manifestArtifactPath(evidencePath(root, receipt.artifactManifest.path), path),
+      );
       if (
         artifact.path !== actual.path ||
         artifact.sha256.toLowerCase() !== actual.sha256.toLowerCase()
