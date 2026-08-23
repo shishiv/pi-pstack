@@ -34,15 +34,20 @@ export interface LiveVerificationArtifact {
   sha256: string;
 }
 
+export interface FileEvidence {
+  path: string;
+  sha256: string;
+}
+
 export interface IndependentReview {
   status: "approved" | "unresolved" | "changes-requested";
   reviewer: string;
-  reference?: string;
+  evidence: FileEvidence;
 }
 
 export interface EvalResult {
   status: "passed" | "failed" | "not-run";
-  revision?: string;
+  evidence: FileEvidence;
   summary?: string;
 }
 
@@ -54,8 +59,8 @@ export interface EvidenceReceipt {
   version: 1;
   repoIdentity: string;
   headSha: string;
-  featureMapRevision: string;
-  skillRevision: string;
+  featureMap: FileEvidence;
+  skill: FileEvidence;
   deterministicChecks: DeterministicChecks;
   liveVerificationArtifacts: readonly LiveVerificationArtifact[];
   independentReview: IndependentReview;

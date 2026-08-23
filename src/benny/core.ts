@@ -297,12 +297,15 @@ export interface ReproduceInput {
 function matchingObservations(observations: readonly UIObservation[]): boolean {
   const first = observations[0];
   const second = observations[1];
+  const evidence = observations.flatMap((item) => item.evidence ?? []);
   return (
     !!first &&
     !!second &&
     observations.length === 2 &&
     observations.every((item) => item.matched) &&
-    first.symptom.trim() === second.symptom.trim()
+    first.symptom.trim() === second.symptom.trim() &&
+    observations.every((item) => (item.evidence?.length ?? 0) > 0) &&
+    new Set(evidence).size === evidence.length
   );
 }
 async function observeTwice(

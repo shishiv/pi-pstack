@@ -6,7 +6,7 @@ import {
   type ProjectReadiness,
 } from "./types.js";
 
-const REVISION_FIELDS = ["repoIdentity", "headSha", "featureMapRevision", "skillRevision"] as const;
+const IDENTITY_FIELDS = ["repoIdentity", "headSha"] as const;
 
 export interface EvidenceReceiptInput extends Omit<EvidenceReceipt, "version"> {
   version?: 1;
@@ -21,15 +21,23 @@ function nonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function validFileEvidence(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const evidence = value as { path?: unknown; sha256?: unknown };
+  return nonEmpty(evidence.path) && /^[a-f0-9]{64}$/i.test(String(evidence.sha256 ?? ""));
+}
+
 /** Return every missing or unsafe part, rather than stopping at the first one. */
 export function validateEvidenceReceipt(receipt: unknown): string[] {
   const reasons: string[] = [];
   if (!receipt || typeof receipt !== "object") return ["missing evidence receipt"];
   const value = receipt as Partial<EvidenceReceipt>;
   if (value.version !== 1) reasons.push("unsupported evidence receipt version");
-  for (const field of REVISION_FIELDS) {
+  for (const field of IDENTITY_FIELDS) {
     if (!nonEmpty(value[field])) reasons.push(`missing evidence: ${field}`);
   }
+  if (!validFileEvidence(value.featureMap)) reasons.push("invalid feature map evidence");
+  if (!validFileEvidence(value.skill)) reasons.push("invalid skill evidence");
   if (value.backend !== "gh-stack" && value.backend !== "graphite")
     reasons.push("missing evidence: backend");
 
@@ -61,10 +69,16 @@ export function validateEvidenceReceipt(receipt: unknown): string[] {
   }
 
   const review = value.independentReview;
-  if (!review || review.status !== "approved" || !nonEmpty(review.reviewer))
+  if (
+    !review ||
+    review.status !== "approved" ||
+    !nonEmpty(review.reviewer) ||
+    !validFileEvidence(review.evidence)
+  )
     reasons.push("independent review is unresolved");
   const evaluation = value.evalResult;
-  if (!evaluation || evaluation.status !== "passed") reasons.push("eval result is not passed");
+  if (!evaluation || evaluation.status !== "passed" || !validFileEvidence(evaluation.evidence))
+    reasons.push("eval result is not passed");
   if (
     value.projectReadiness !== undefined &&
     value.projectReadiness !== "ready" &&

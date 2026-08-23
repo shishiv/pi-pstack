@@ -1,8 +1,11 @@
 {
+  "schemaVersion": 1,
   "name": "benny-triage",
   "every": "1m",
-  "workflow": "src/benny/workflows.ts#BENNY_TRIAGE_WORKFLOW",
+  "action": "triage",
+  "tool": "pstack_benny",
   "polling": "schedule-wake",
-  "nestedPolling": false,
+  "overlap": "skip",
+  "catchUp": "latest",
   "draftOnly": true
 }

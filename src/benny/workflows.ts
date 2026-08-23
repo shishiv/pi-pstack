@@ -6,17 +6,22 @@ export interface BennyScheduleWorkflow {
   readonly every: string;
   readonly workflowScript: string;
   readonly polling: "schedule-wake";
+  readonly overlap: "skip";
+  readonly catchUp: "latest";
+  readonly tool: "pstack_benny";
+  readonly action: "triage" | "reproduce";
+  readonly draftOnly: true;
 }
 
 const triageScript = buildSingleChildWorkflowScript({
   key: "triage-coordinator",
-  role: "implement",
-  task: "Run the Benny coordinator triage handler. Read .pi/pstack/benny/skills/triage-issue-reports/SKILL.md as a dormant operational resource. Coordinator-only writes; preserve immutable source coordinates.",
+  role: "benny",
+  task: "Read .pi/pstack/benny/skills/triage-issue-reports/SKILL.md and the approved configuration, then call pstack_benny once with action triage and the configured adapter provider. The provider polls one event; the tool owns the durable ledger and external writes.",
 });
 const reproduceScript = buildSingleChildWorkflowScript({
   key: "reproduce-coordinator",
-  role: "implement",
-  task: "Run the Benny coordinator reproduce handler. Read .pi/pstack/benny/skills/reproduce-and-fix-issues/SKILL.md as a dormant operational resource. Require two matching UI observations; draft PR only.",
+  role: "benny",
+  task: "Read .pi/pstack/benny/skills/reproduce-and-fix-issues/SKILL.md and the approved configuration, then call pstack_benny once with action reproduce, the configured adapter provider, and an explicit featureId. The provider polls one trusted marker; the tool enforces two observations and draft-only delivery.",
 });
 validateWorkflowScript(triageScript);
 validateWorkflowScript(reproduceScript);
@@ -36,12 +41,22 @@ function buildWorkflows(pollSeconds: number): readonly BennyScheduleWorkflow[] {
       every,
       workflowScript: triageScript,
       polling: "schedule-wake" as const,
+      overlap: "skip" as const,
+      catchUp: "latest" as const,
+      tool: "pstack_benny" as const,
+      action: "triage" as const,
+      draftOnly: true as const,
     }),
     Object.freeze({
       name: "benny-reproduce" as const,
       every,
       workflowScript: reproduceScript,
       polling: "schedule-wake" as const,
+      overlap: "skip" as const,
+      catchUp: "latest" as const,
+      tool: "pstack_benny" as const,
+      action: "reproduce" as const,
+      draftOnly: true as const,
     }),
   ]);
 }

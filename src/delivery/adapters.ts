@@ -31,6 +31,27 @@ function field(value: unknown, ...names: string[]): string | undefined {
   return undefined;
 }
 
+function stackFields(value: unknown): Pick<StackSnapshot, "headSha" | "pullRequest"> {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !Array.isArray((value as { branches?: unknown }).branches)
+  )
+    return {};
+  const snapshot = value as {
+    currentBranch?: unknown;
+    branches: { name?: unknown; head?: unknown; pr?: { url?: unknown } }[];
+  };
+  const current = snapshot.branches.find(
+    (branch) =>
+      typeof snapshot.currentBranch === "string" && branch.name === snapshot.currentBranch,
+  );
+  return {
+    headSha: typeof current?.head === "string" ? current.head : undefined,
+    pullRequest: typeof current?.pr?.url === "string" ? current.pr.url : undefined,
+  };
+}
+
 function asCommandFailure(error: unknown): CommandResult {
   return {
     exitCode: 1,
@@ -78,11 +99,12 @@ abstract class CliStackBackend implements StackBackend {
     const argv = this.argv({ kind: "inspect" });
     const result = await run(this.runner, argv);
     const raw = parseOutput(result);
+    const stack = this.name === "gh-stack" ? stackFields(raw) : {};
     return {
       backend: this.name,
       repoIdentity: field(raw, "repoIdentity", "repository", "repo", "name"),
-      headSha: field(raw, "headSha", "head_sha", "sha", "oid"),
-      pullRequest: field(raw, "pullRequest", "pull_request", "pr", "url"),
+      headSha: stack.headSha ?? field(raw, "headSha", "head_sha", "sha", "oid"),
+      pullRequest: stack.pullRequest ?? field(raw, "pullRequest", "pull_request", "pr", "url"),
       raw,
     };
   }

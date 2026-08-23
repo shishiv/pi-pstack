@@ -1,8 +1,11 @@
 {
+  "schemaVersion": 1,
   "name": "benny-reproduce",
   "every": "1m",
-  "workflow": "src/benny/workflows.ts#BENNY_REPRODUCE_WORKFLOW",
+  "action": "reproduce",
+  "tool": "pstack_benny",
   "polling": "schedule-wake",
-  "nestedPolling": false,
+  "overlap": "skip",
+  "catchUp": "latest",
   "draftOnly": true
 }

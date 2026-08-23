@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
@@ -151,6 +151,7 @@ test("file ledger persists completed work across coordinator processes", async (
     const first = new benny.FileBennyLedger(root);
     assert.equal(first.claim("triage:C1:100"), true);
     first.complete("triage:C1:100");
+    first.release("triage:C1:100");
     const second = new benny.FileBennyLedger(root);
     assert.equal(second.claim("triage:C1:100"), false);
     assert.equal(second.has("triage:C1:100"), true);
@@ -252,9 +253,14 @@ function control(overrides = {}) {
       return calls;
     },
     actions: ["bringUp", "driveUI", "inspectState", "screenshot", "recording", "cleanup"],
-    async observe({ revision }) {
+    async observe({ revision, attempt }) {
       calls++;
-      return { matched: !revision, symptom: "save error", expected: "saved" };
+      return {
+        matched: !revision,
+        symptom: "save error",
+        expected: "saved",
+        evidence: [`attempt-${attempt}-${revision ?? "baseline"}.png`],
+      };
     },
     async cleanup() {},
     async fix() {
@@ -303,6 +309,44 @@ test("reproduce requires two matching observations and opens a draft only", asyn
   );
 });
 
+test("reproduce rejects two observations that reuse the same evidence", async () => {
+  const triaged = {
+    ...root,
+    messages: [
+      ...root.messages,
+      { authorId: "U1", text: "[benny:bug]", channelId: "C1", ts: "101", threadTs: "100" },
+    ],
+  };
+  const a = adapters({
+    slack: {
+      ...adapters().slack,
+      async readThread() {
+        return triaged;
+      },
+    },
+    control: control({
+      async observe() {
+        return {
+          matched: true,
+          symptom: "save error",
+          expected: "saved",
+          evidence: ["same.png"],
+        };
+      },
+    }),
+    featureMap,
+  });
+  const result = await benny.runReproduce({
+    config,
+    trigger: trigger(),
+    featureId: "report",
+    adapters: a,
+    ledger: benny.createBennyLedger(),
+  });
+  assert.equal(result.status, "blocked");
+  assert.match(result.reason, /independent matching UI observations/);
+});
+
 test("existing-fix mode verifies without authoring a competing patch", async () => {
   const triaged = {
     ...root,
@@ -319,8 +363,13 @@ test("existing-fix mode verifies without authoring a competing patch", async () 
       },
     },
     control: control({
-      async verifyExistingFix() {
-        return { matched: false, symptom: "save error", expected: "saved" };
+      async verifyExistingFix({ attempt }) {
+        return {
+          matched: false,
+          symptom: "save error",
+          expected: "saved",
+          evidence: [`existing-fix-${attempt}.png`],
+        };
       },
     }),
     featureMap,
@@ -423,6 +472,76 @@ test("schedule definitions use Pi every syntax derived from configuration", () =
     workflows.every((workflow) => workflow.polling === "schedule-wake"),
     true,
   );
+  assert.equal(
+    workflows.every(
+      (workflow) =>
+        workflow.tool === "pstack_benny" &&
+        workflow.overlap === "skip" &&
+        workflow.catchUp === "latest",
+    ),
+    true,
+  );
+});
+
+test("committed Benny workflow descriptors match the runtime contract", async () => {
+  for (const action of ["triage", "reproduce"]) {
+    const descriptor = JSON.parse(
+      await readFile(`automations/benny/${action}.workflow.json`, "utf8"),
+    );
+    assert.deepEqual(Object.keys(descriptor).toSorted(), [
+      "action",
+      "catchUp",
+      "draftOnly",
+      "every",
+      "name",
+      "overlap",
+      "polling",
+      "schemaVersion",
+      "tool",
+    ]);
+    assert.equal(descriptor.schemaVersion, 1);
+    assert.equal(descriptor.action, action);
+    assert.equal(descriptor.tool, "pstack_benny");
+    assert.equal(descriptor.overlap, "skip");
+    assert.equal(descriptor.catchUp, "latest");
+    assert.equal(descriptor.draftOnly, true);
+  }
+});
+
+test("registered provider can poll one event without exposing external tools to the coordinator", async () => {
+  let polls = 0;
+  const firstRoot = await mkdtemp(join(tmpdir(), "benny-poll-"));
+  const secondRoot = await mkdtemp(join(tmpdir(), "benny-poll-empty-"));
+  const dispose = benny.registerBennyAdapterProvider({
+    name: "poll-fixture",
+    async nextTrigger() {
+      polls++;
+      return polls === 1 ? trigger() : null;
+    },
+    async load() {
+      return adapters();
+    },
+  });
+  try {
+    const first = await benny.runBennyRuntime({
+      action: "triage",
+      provider: "poll-fixture",
+      config,
+      cwd: firstRoot,
+    });
+    assert.equal(first.status, "completed");
+    const second = await benny.runBennyRuntime({
+      action: "triage",
+      provider: "poll-fixture",
+      config,
+      cwd: secondRoot,
+    });
+    assert.equal(second.reason, "no pending source event");
+  } finally {
+    dispose();
+    await rm(firstRoot, { recursive: true, force: true });
+    await rm(secondRoot, { recursive: true, force: true });
+  }
 });
 
 test("child briefs make prompt-injection content inert and forbid writes", () => {

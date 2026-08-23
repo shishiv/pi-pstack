@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
@@ -11,7 +14,24 @@ function runnerFor(backend) {
     calls,
     async run(argv) {
       calls.push([...argv]);
-      if (argv.includes("status") || argv.includes("log")) {
+      if (argv[0] === "gh" && argv.includes("view")) {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            trunk: "main",
+            currentBranch: "feature",
+            branches: [
+              {
+                name: "feature",
+                head: "abc123",
+                pr: { number: 42, url: "https://github.com/acme/demo/pull/42" },
+              },
+            ],
+          }),
+          stderr: "",
+        };
+      }
+      if (argv.includes("log")) {
         return {
           exitCode: 0,
           stdout: JSON.stringify({
@@ -41,6 +61,10 @@ for (const [label, Backend, expectedCommand] of [
     const backend = new Backend(runner);
     const snapshot = await backend.inspect();
     assert.equal(snapshot.backend, label === "gh stack" ? "gh-stack" : "graphite");
+    if (label === "gh stack") {
+      assert.equal(snapshot.headSha, "abc123");
+      assert.equal(snapshot.pullRequest, "https://github.com/acme/demo/pull/42");
+    }
     const result = await backend.execute({ kind: "submit", draft: true });
     assert.equal(result.accepted, true);
     assert.equal(result.pullRequest, "42");
@@ -125,8 +149,8 @@ function receipt(overrides = {}) {
   return delivery.createEvidenceReceipt({
     repoIdentity: "acme/demo",
     headSha: "abc123",
-    featureMapRevision: "feature-map@1",
-    skillRevision: "skill@1",
+    featureMap: { path: "feature-map.md", sha256: "b".repeat(64) },
+    skill: { path: "SKILL.md", sha256: "c".repeat(64) },
     deterministicChecks: {
       status: "green",
       checks: [
@@ -137,8 +161,15 @@ function receipt(overrides = {}) {
     liveVerificationArtifacts: [
       { kind: "playwright-trace", path: "artifacts/trace.zip", sha256: "a".repeat(64) },
     ],
-    independentReview: { status: "approved", reviewer: "reviewer-1" },
-    evalResult: { status: "passed", revision: "eval@1" },
+    independentReview: {
+      status: "approved",
+      reviewer: "reviewer-1",
+      evidence: { path: "review.md", sha256: "d".repeat(64) },
+    },
+    evalResult: {
+      status: "passed",
+      evidence: { path: "eval.json", sha256: "e".repeat(64) },
+    },
     backend: "gh-stack",
     projectReadiness: "ready",
     origin: "human",
@@ -216,4 +247,41 @@ test("negative controls fail closed for every delivery gate", () => {
   });
   assert.equal(bennyDraft.allowed, true);
   assert.equal(bennyDraft.draftOnly, true);
+});
+
+test("receipt evidence is hashed from disk and tampering is rejected", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pstack-receipt-"));
+  try {
+    for (const [path, content] of [
+      ["feature-map.md", "feature map"],
+      ["SKILL.md", "skill"],
+      ["review.md", "VERIFIED\n"],
+      ["eval.json", JSON.stringify({ grades: [{ grade: { hardPassed: true } }] })],
+      ["trace.zip", "trace"],
+    ]) {
+      await writeFile(join(root, path), content, "utf8");
+    }
+    const value = await delivery.createEvidenceReceiptFromFiles({
+      root,
+      repoIdentity: "acme/demo",
+      headSha: "abc123",
+      backend: "gh-stack",
+      origin: "human",
+      featureMapPath: "feature-map.md",
+      skillPath: "SKILL.md",
+      artifactPaths: [{ kind: "trace", path: "trace.zip" }],
+      reviewPath: "review.md",
+      reviewer: "reviewer",
+      evalPath: "eval.json",
+      deterministicChecks: {
+        status: "green",
+        checks: [{ name: "tests", status: "passed" }],
+      },
+    });
+    assert.deepEqual(await delivery.verifyEvidenceReceiptFiles(value, root), []);
+    await writeFile(join(root, "trace.zip"), "tampered", "utf8");
+    assert.match((await delivery.verifyEvidenceReceiptFiles(value, root)).join(";"), /digest/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

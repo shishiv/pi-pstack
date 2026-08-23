@@ -1,6 +1,13 @@
 import type { BennyWorkflowKind, Ledger, SourceCoordinates } from "./types.js";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 export function ledgerKey(coordinates: SourceCoordinates, workflow: BennyWorkflowKind): string {
@@ -62,8 +69,11 @@ export class FileBennyLedger implements Ledger {
   }
 
   public release(key: string): void {
+    const path = ledgerFile(this.root, key);
     try {
-      unlinkSync(ledgerFile(this.root, key));
+      const value = JSON.parse(readFileSync(path, "utf8")) as { status?: unknown };
+      if (value.status === "completed") return;
+      unlinkSync(path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }

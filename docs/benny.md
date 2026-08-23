@@ -20,3 +20,23 @@ Os schedules usam o `subagent` do Pi com `overlap: "skip"` e `catchUp: "latest"`
 ## Configuração
 
 Copie o pack para `.pi/pstack/benny/`. Mantenha configuração, routing map e feature map em `.pi/pstack/benny-config/`. Segredos permanecem no secret manager ou ambiente, nunca no YAML ou nos prompts.
+
+## Adapter provider
+
+Uma extensão de integração registra o acesso real a Slack, tracker, UI e repositório. O agente `benny-coordinator` recebe somente `read`, `grep`, `find`, `ls` e `pstack_benny`. Ele não recebe ferramentas diretas de Slack ou delivery.
+
+```ts
+import { registerBennyAdapterProvider } from "@shishiv/pi-pstack/benny";
+
+const dispose = registerBennyAdapterProvider({
+  name: "company-integrations",
+  async nextTrigger({ action, config, cwd }) {
+    // Return one normalized source event, or null when none is pending.
+  },
+  async load({ config, cwd }) {
+    return { slack, tracker, control, repository, featureMap };
+  },
+});
+```
+
+O provider mantém credenciais fora dos prompts. `pstack_benny` resolve o provider, usa o ledger persistente e chama o core tipado. Sem provider registrado, o ciclo termina bloqueado e sem writes.

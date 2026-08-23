@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   BeforeAgentStartEvent,
   ExtensionAPI,
@@ -6,10 +7,13 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { preflightCapabilities } from "../src/capabilities/preflight.js";
+import { listBennyAdapterProviders, runBennyRuntime } from "../src/benny/index.js";
 import {
   authorizeDelivery,
+  createEvidenceReceiptFromFiles,
   createDeliveryBackends,
-  type EvidenceReceipt,
+  loadEvidenceReceipt,
+  verifyEvidenceReceiptFiles,
   type StackBackendName,
   type StackOperation,
 } from "../src/delivery/index.js";
@@ -186,10 +190,118 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
+    name: "pstack_benny",
+    label: "Run a guarded Benny workflow",
+    description:
+      "Run Benny triage or reproduce through a registered adapter provider and durable project ledger.",
+    parameters: Type.Object({
+      action: Type.Union([Type.Literal("triage"), Type.Literal("reproduce")]),
+      provider: Type.String({ minLength: 1 }),
+      config: Type.Any(),
+      trigger: Type.Optional(Type.Any()),
+      featureId: Type.Optional(Type.String()),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      if (!ctx.isProjectTrusted()) {
+        return bennyResult({ status: "blocked", reason: "project is not trusted", writes: 0 });
+      }
+      if (!listBennyAdapterProviders().includes(params.provider)) {
+        return bennyResult({
+          status: "blocked",
+          reason: `Benny adapter provider is unavailable: ${params.provider}`,
+          writes: 0,
+        });
+      }
+      return bennyResult(
+        await runBennyRuntime({
+          action: params.action,
+          provider: params.provider,
+          config: params.config,
+          trigger: params.trigger,
+          featureId: params.featureId,
+          cwd: ctx.cwd,
+        }),
+      );
+    },
+  });
+
+  pi.registerTool({
+    name: "pstack_create_receipt",
+    label: "Create a verified pstack delivery receipt",
+    description:
+      "Hash local verification, review, and eval artifacts into a receipt for the current repository HEAD.",
+    parameters: Type.Object({
+      backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
+      origin: Type.Union([Type.Literal("human"), Type.Literal("benny")]),
+      featureMapPath: Type.String({ minLength: 1 }),
+      skillPath: Type.String({ minLength: 1 }),
+      reviewPath: Type.String({ minLength: 1 }),
+      reviewer: Type.String({ minLength: 1 }),
+      evalPath: Type.String({ minLength: 1 }),
+      artifactPaths: Type.Array(
+        Type.Object({ kind: Type.String({ minLength: 1 }), path: Type.String({ minLength: 1 }) }),
+        { minItems: 1 },
+      ),
+      checkCommands: Type.Array(
+        Type.Object({
+          name: Type.String({ minLength: 1 }),
+          command: Type.String({ minLength: 1 }),
+          args: Type.Array(Type.String()),
+        }),
+        { minItems: 1 },
+      ),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (!ctx.isProjectTrusted()) return deliveryRejected("project is not trusted");
+      try {
+        const currentHead = await pi.exec("git", ["rev-parse", "HEAD"], { cwd: ctx.cwd, signal });
+        const repository = await pi.exec(
+          "gh",
+          ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+          { cwd: ctx.cwd, signal },
+        );
+        if (currentHead.code !== 0 || repository.code !== 0)
+          return deliveryRejected("repository identity or HEAD could not be resolved");
+        const checks = [];
+        for (const check of params.checkCommands) {
+          const result = await pi.exec(check.command, check.args, { cwd: ctx.cwd, signal });
+          if (result.code !== 0)
+            return deliveryRejected(`deterministic check failed: ${check.name}`);
+          checks.push({ name: check.name, status: "passed" as const });
+        }
+        const receipt = await createEvidenceReceiptFromFiles({
+          root: ctx.cwd,
+          repoIdentity: repository.stdout.trim(),
+          headSha: currentHead.stdout.trim(),
+          backend: params.backend,
+          origin: params.origin,
+          featureMapPath: params.featureMapPath,
+          skillPath: params.skillPath,
+          artifactPaths: params.artifactPaths,
+          reviewPath: params.reviewPath,
+          reviewer: params.reviewer,
+          evalPath: params.evalPath,
+          deterministicChecks: { status: "green", checks },
+        });
+        const directory = join(ctx.cwd, ".pi", "pstack", "receipts");
+        const path = join(directory, `${receipt.headSha}.json`);
+        await mkdir(directory, { recursive: true });
+        await writeFile(path, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+        return {
+          content: [{ type: "text", text: `Created verified receipt for ${receipt.headSha}.` }],
+          details: { path, receipt },
+        };
+      } catch (error) {
+        return deliveryRejected(error instanceof Error ? error.message : String(error));
+      }
+    },
+  });
+
+  pi.registerTool({
     name: "pstack_delivery",
     label: "Run gated pstack delivery",
     description:
-      "Run a gh-stack or Graphite operation. Auto-merge requires an exact-head evidence receipt.",
+      "Inspect a stack or run a receipt-gated gh-stack or Graphite mutation. Auto-merge also verifies the live PR head and checks.",
     parameters: Type.Object({
       backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
       operation: Type.Union([
@@ -203,7 +315,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       branch: Type.Optional(Type.String()),
       pullRequest: Type.Optional(Type.String()),
       draft: Type.Optional(Type.Boolean()),
-      receipt: Type.Optional(Type.Any()),
+      receiptPath: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       if (!ctx.isProjectTrusted()) {
@@ -218,61 +330,98 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       if (currentHead.code !== 0 || repository.code !== 0) {
         return deliveryRejected("repository identity or HEAD could not be resolved");
       }
-      if (params.operation !== "inspect") {
-        const level = deliveryLevel(params.operation);
-        const authorization = authorizeDelivery({
-          receipt: params.receipt as EvidenceReceipt | undefined,
-          repoIdentity: repository.stdout.trim(),
-          currentHeadSha: currentHead.stdout.trim(),
-          backend: params.backend as StackBackendName,
-          level,
-        });
-        if (!authorization.allowed) return deliveryRejected(authorization.reasons.join("; "));
-        if (authorization.draftOnly && params.operation === "submit" && params.draft === false) {
-          return deliveryRejected("Benny delivery is draft-only");
+      try {
+        if (params.operation !== "inspect") {
+          if (!params.receiptPath) return deliveryRejected("a verified receipt path is required");
+          const receipt = await loadEvidenceReceipt(params.receiptPath, ctx.cwd);
+          const fileReasons = await verifyEvidenceReceiptFiles(receipt, ctx.cwd);
+          if (fileReasons.length > 0) return deliveryRejected(fileReasons.join("; "));
+          if (params.operation === "auto-merge") {
+            if (!params.pullRequest)
+              return deliveryRejected("auto-merge requires a pull request number");
+            const pullRequest = await pi.exec(
+              "gh",
+              [
+                "pr",
+                "view",
+                params.pullRequest,
+                "--json",
+                "headRefOid,isDraft,statusCheckRollup,mergeStateStatus",
+              ],
+              { cwd: ctx.cwd, signal },
+            );
+            if (pullRequest.code !== 0)
+              return deliveryRejected("pull request state could not be verified");
+            const state = JSON.parse(pullRequest.stdout) as {
+              headRefOid?: string;
+              isDraft?: boolean;
+              mergeStateStatus?: string;
+              statusCheckRollup?: { conclusion?: string; status?: string }[];
+            };
+            if (state.headRefOid !== receipt.headSha)
+              return deliveryRejected("receipt does not match the pull request head");
+            if (state.isDraft) return deliveryRejected("pull request is still a draft");
+            if (!pullRequestChecksPass(state.statusCheckRollup ?? []))
+              return deliveryRejected("pull request checks are not green");
+            if (!new Set(["CLEAN", "HAS_HOOKS"]).has(state.mergeStateStatus ?? ""))
+              return deliveryRejected("pull request is not mergeable");
+          }
+          const level = deliveryLevel(params.operation);
+          const authorization = authorizeDelivery({
+            receipt,
+            repoIdentity: repository.stdout.trim(),
+            currentHeadSha: currentHead.stdout.trim(),
+            backend: params.backend as StackBackendName,
+            level,
+          });
+          if (!authorization.allowed) return deliveryRejected(authorization.reasons.join("; "));
+          if (authorization.draftOnly && params.operation === "submit" && params.draft === false)
+            return deliveryRejected("Benny delivery is draft-only");
         }
-      }
-      const runner = {
-        async run(argv: readonly string[]) {
-          const [command, ...args] = argv;
-          if (!command) return { exitCode: 1, stdout: "", stderr: "empty command" };
-          const result = await pi.exec(command, args, { cwd: ctx.cwd, signal });
-          return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr };
-        },
-      };
-      const availableCommands = ["gh"];
-      if (params.backend === "graphite") {
-        const gt = await pi.exec("gt", ["--version"], { cwd: ctx.cwd, signal });
-        if (gt.code === 0) availableCommands.push("gt");
-      }
-      const backends = createDeliveryBackends({
-        runner,
-        availableCommands,
-      });
-      const backend = params.backend === "graphite" ? backends.graphite : backends.ghStack;
-      if (!backend)
-        return deliveryRejected("Graphite is unavailable; install and authenticate gt first");
-      const operation = deliveryOperation(params);
-      const result = await backend.execute(operation);
-      return {
-        content: [
-          {
-            type: "text",
-            text: result.accepted
-              ? `${result.backend} ${result.operation} completed.`
-              : `${result.backend} ${result.operation} failed.`,
+        const runner = {
+          async run(argv: readonly string[]) {
+            const [command, ...args] = argv;
+            if (!command) return { exitCode: 1, stdout: "", stderr: "empty command" };
+            const result = await pi.exec(command, args, { cwd: ctx.cwd, signal });
+            return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr };
           },
-        ],
-        details: result,
-      };
+        };
+        const availableCommands = ["gh"];
+        if (params.backend === "graphite") {
+          const gt = await pi.exec("gt", ["--version"], { cwd: ctx.cwd, signal });
+          if (gt.code === 0) availableCommands.push("gt");
+        }
+        const backends = createDeliveryBackends({
+          runner,
+          availableCommands,
+        });
+        const backend = params.backend === "graphite" ? backends.graphite : backends.ghStack;
+        if (!backend)
+          return deliveryRejected("Graphite is unavailable; install and authenticate gt first");
+        const operation = deliveryOperation(params);
+        const result = await backend.execute(operation);
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.accepted
+                ? `${result.backend} ${result.operation} completed.`
+                : `${result.backend} ${result.operation} failed.`,
+            },
+          ],
+          details: result,
+        };
+      } catch (error) {
+        return deliveryRejected(error instanceof Error ? error.message : String(error));
+      }
     },
   });
 
   pi.on("tool_call", async (event) => {
-    if (!active || event.toolName !== "bash") return;
+    if (!active || event.toolName === "pstack_delivery") return;
     const command = (event.input as { command?: unknown }).command;
-    if (typeof command !== "string") return;
-    if (containsDirectMerge(command)) {
+    const payload = `${event.toolName}\n${typeof command === "string" ? command : JSON.stringify(event.input)}`;
+    if (containsDirectMerge(payload)) {
       return {
         block: true,
         reason: "Use pstack_delivery so exact-head evidence and autonomy gates are enforced.",
@@ -310,8 +459,22 @@ function containsDirectMerge(command: string): boolean {
     /\bgh\b[\s\S]{0,160}\bstack\s+merge\b/.test(value) ||
     /\bgh\b[\s\S]{0,160}\bpr\s+merge\b/.test(value) ||
     /\bgh\s+api\b[\s\S]{0,240}\/pulls\/[1-9][0-9]*\/merge\b/.test(value) ||
+    /\bgh\s+api\b[\s\S]{0,240}\b(?:mergepullrequest|enablepullrequestautomerge)\b/.test(value) ||
+    /\bgh\s+api\b[\s\S]{0,240}\brepos\/[^\s]+\/merges\b/.test(value) ||
+    /\/repos\/[^/\s]+\/[^/\s]+\/pulls\/[1-9][0-9]*\/merge\b/.test(value) ||
+    /\/repos\/[^/\s]+\/[^/\s]+\/merges\b/.test(value) ||
+    /(?:merge[_-]?pull[_-]?request|enable[_-]?pull[_-]?request[_-]?auto[_-]?merge)/.test(value) ||
     /\bgt\s+merge\b/.test(value) ||
     /\bgt\s+submit\b[^\n]*--merge-when-ready\b/.test(value)
+  );
+}
+
+function pullRequestChecksPass(
+  checks: readonly { conclusion?: string; status?: string }[],
+): boolean {
+  if (checks.length === 0) return false;
+  return checks.every((check) =>
+    new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]).has(check.conclusion ?? ""),
   );
 }
 
@@ -319,6 +482,18 @@ function deliveryRejected(reason: string) {
   return {
     content: [{ type: "text" as const, text: `Delivery rejected: ${reason}.` }],
     details: { accepted: false, reason },
+  };
+}
+
+function bennyResult(result: { status: string; reason?: string; writes: number }) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Benny ${result.status}: ${result.reason ?? `${result.writes} external write(s)`}.`,
+      },
+    ],
+    details: result,
   };
 }
 
