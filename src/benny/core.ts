@@ -213,17 +213,21 @@ export async function runTriage(input: TriageInput): Promise<BennyResult> {
   if (!input.ledger.claim(key))
     return { status: "duplicate", reason: "source event already processed", writes: 0 };
   let writes = 0;
-  let mutatedIssue: TrackerIssue | undefined;
+  let createdIssue: TrackerIssue | undefined;
+  let completed = false;
   try {
     const thread = await input.adapters.slack.readThread(coordinates);
     if (!validThread(thread, coordinates))
       return fail("source parent is missing or coordinates changed");
-    if (hasPriorVerdict(thread, config, coordinates))
+    if (hasPriorVerdict(thread, config, coordinates)) {
+      input.ledger.complete?.(key);
+      completed = true;
       return {
         status: "duplicate",
         reason: "source thread already has a Benny verdict",
         writes: 0,
       };
+    }
     const classification = classifyReport(text(thread));
     const marker = configuredMarker(config, classification);
     let trackerIssue: TrackerIssue | undefined;
@@ -235,7 +239,6 @@ export async function runTriage(input: TriageInput): Promise<BennyResult> {
       const match = matches.find((item) => item.confidence === "confident");
       if (match) {
         trackerIssue = match;
-        mutatedIssue = match;
         await input.adapters.tracker.update({
           issue: match,
           sourcePermalink: thread.permalink,
@@ -252,7 +255,7 @@ export async function runTriage(input: TriageInput): Promise<BennyResult> {
           ],
           sourcePermalink: thread.permalink ?? "",
         });
-        mutatedIssue = trackerIssue;
+        createdIssue = trackerIssue;
         writes++;
       }
     }
@@ -262,11 +265,12 @@ export async function runTriage(input: TriageInput): Promise<BennyResult> {
     await input.adapters.slack.postThreadReply({ coordinates, text: verdict });
     writes++;
     input.ledger.complete?.(key);
+    completed = true;
     return { status: "completed", classification, marker, trackerIssue, writes };
   } catch (error) {
-    if (mutatedIssue) {
+    if (createdIssue) {
       try {
-        await input.adapters.tracker.compensate({ issue: mutatedIssue });
+        await input.adapters.tracker.compensate({ issue: createdIssue });
         writes++;
       } catch {
         /* a failed compensation remains a failed, write-blocked run */
@@ -277,12 +281,15 @@ export async function runTriage(input: TriageInput): Promise<BennyResult> {
       reason: error instanceof Error ? error.message : String(error),
       writes,
     };
+  } finally {
+    if (!completed) input.ledger.release?.(key);
   }
 }
 
 export interface ReproduceInput {
   config: unknown;
   trigger: Trigger;
+  featureId: string;
   adapters: Partial<BennyAdapters>;
   ledger: Ledger;
   report?: string;
@@ -318,6 +325,9 @@ export async function runReproduce(input: ReproduceInput): Promise<BennyResult> 
     return fail("control adapter or required action is missing");
   if (!input.adapters.featureMap || !validFeatureMap(input.adapters.featureMap))
     return fail("feature map is missing or invalid");
+  const feature = input.adapters.featureMap.features.find((item) => item.id === input.featureId);
+  if (!feature) return fail(`feature map does not cover ${input.featureId}`);
+  const featureMap = { ...input.adapters.featureMap, features: [feature] };
   let coordinates: SourceCoordinates;
   try {
     coordinates = freezeSourceCoordinates(config, input.trigger);
@@ -329,6 +339,7 @@ export async function runReproduce(input: ReproduceInput): Promise<BennyResult> 
     return { status: "duplicate", reason: "source event already processed", writes: 0 };
   const control = input.adapters.control;
   let writes = 0;
+  let completed = false;
   try {
     const thread = await input.adapters.slack.readThread(coordinates);
     if (!validThread(thread, coordinates))
@@ -342,14 +353,14 @@ export async function runReproduce(input: ReproduceInput): Promise<BennyResult> 
       if (!control.verifyExistingFix) return fail("existing-fix verification action is missing");
       const baseline = await observeTwice(control, {
         report,
-        featureMap: input.adapters.featureMap,
+        featureMap,
         artifactDirectory: config.control.artifactDirectory,
       });
       const patched = [
         await control.verifyExistingFix({
           revision: existing.revision,
           report,
-          featureMap: input.adapters.featureMap,
+          featureMap,
           attempt: 1,
           artifactDirectory: config.control.artifactDirectory,
         }),
@@ -364,27 +375,31 @@ export async function runReproduce(input: ReproduceInput): Promise<BennyResult> 
       if (!matchingObservations(baseline) || !patched.every((item) => !item.matched))
         return fail("existing fix did not pass the two-observation gate");
       input.ledger.complete?.(key);
+      completed = true;
       return { status: "completed", mode: "verify-existing-fix", reproductions: 2, writes };
     }
     const observations = await observeTwice(control, {
       report,
-      featureMap: input.adapters.featureMap,
+      featureMap,
       artifactDirectory: config.control.artifactDirectory,
     });
     if (!matchingObservations(observations))
       return fail("two independent matching UI observations are required");
     const repository = input.adapters.repository;
-    if (!repository?.createDraftPullRequest || !control.fix)
+    if (!repository?.createDraftPullRequest || !control.fix) {
+      input.ledger.complete?.(key);
+      completed = true;
       return { status: "completed", mode: "reproduce", reproductions: 2, writes };
+    }
     const fixed = await control.fix({
       report,
-      featureMap: input.adapters.featureMap,
+      featureMap,
       artifactDirectory: config.control.artifactDirectory,
     });
     const after = await observeTwice(control, {
       revision: fixed.revision,
       report,
-      featureMap: input.adapters.featureMap,
+      featureMap,
       artifactDirectory: config.control.artifactDirectory,
     });
     if (after.some((item) => item.matched)) return fail("patched build still reproduces");
@@ -397,6 +412,7 @@ export async function runReproduce(input: ReproduceInput): Promise<BennyResult> 
     });
     writes++;
     input.ledger.complete?.(key);
+    completed = true;
     return {
       status: "completed",
       mode: "reproduce",
@@ -406,6 +422,7 @@ export async function runReproduce(input: ReproduceInput): Promise<BennyResult> 
     };
   } finally {
     await control.cleanup?.();
+    if (!completed) input.ledger.release?.(key);
   }
 }
 

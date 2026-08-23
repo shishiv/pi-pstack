@@ -77,8 +77,8 @@ export function validateBennyConfig(value: unknown): { valid: boolean; errors: s
   const budgets = object(root.budgets, "budgets", errors);
   if (budgets)
     for (const key of ["pollSeconds", "reproMinutes", "fixMinutes"])
-      if (typeof budgets[key] !== "number" || !Number.isFinite(budgets[key]) || budgets[key] <= 0)
-        errors.push(`budgets.${key} must be a positive number`);
+      if (typeof budgets[key] !== "number" || !Number.isInteger(budgets[key]) || budgets[key] <= 0)
+        errors.push(`budgets.${key} must be a positive integer`);
   return { valid: errors.length === 0, errors };
 }
 

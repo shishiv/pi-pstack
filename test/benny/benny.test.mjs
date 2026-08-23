@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
@@ -142,6 +145,42 @@ test("duplicate events produce one verdict and one tracker mutation", async () =
   assert.equal(a.writes.filter(([kind]) => kind === "slack").length, 1);
 });
 
+test("file ledger persists completed work across coordinator processes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "benny-ledger-"));
+  try {
+    const first = new benny.FileBennyLedger(root);
+    assert.equal(first.claim("triage:C1:100"), true);
+    first.complete("triage:C1:100");
+    const second = new benny.FileBennyLedger(root);
+    assert.equal(second.claim("triage:C1:100"), false);
+    assert.equal(second.has("triage:C1:100"), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("transient triage failure releases its claim for a safe retry", async () => {
+  let reads = 0;
+  const a = adapters({
+    slack: {
+      ...adapters().slack,
+      async readThread() {
+        reads++;
+        return reads === 1 ? null : root;
+      },
+      async postThreadReply(value) {
+        a.writes.push(["slack", value]);
+        return {};
+      },
+    },
+  });
+  const ledger = benny.createBennyLedger();
+  const first = await benny.runTriage({ config, trigger: trigger(), adapters: a, ledger });
+  const second = await benny.runTriage({ config, trigger: trigger(), adapters: a, ledger });
+  assert.equal(first.status, "blocked");
+  assert.equal(second.status, "completed");
+});
+
 test("tracker mutation compensates when the thread verdict cannot land", async () => {
   const a = adapters({
     slack: {
@@ -159,6 +198,36 @@ test("tracker mutation compensates when the thread verdict cannot land", async (
   });
   assert.equal(result.status, "failed");
   assert.equal(a.writes.filter(([kind]) => kind === "compensate").length, 1);
+});
+
+test("an existing issue update is not compensated as if this run created it", async () => {
+  const a = adapters({
+    slack: {
+      ...adapters().slack,
+      async postThreadReply() {
+        throw new Error("post failed");
+      },
+    },
+    tracker: {
+      ...adapters().tracker,
+      async search() {
+        return [{ id: "existing", url: "https://tracker/existing", confidence: "confident" }];
+      },
+      async update() {
+        a.writes.push(["update"]);
+      },
+      async compensate() {
+        a.writes.push(["compensate"]);
+      },
+    },
+  });
+  await benny.runTriage({
+    config,
+    trigger: trigger(),
+    adapters: a,
+    ledger: benny.createBennyLedger(),
+  });
+  assert.equal(a.writes.filter(([kind]) => kind === "compensate").length, 0);
 });
 
 test("coordinates are frozen and trusted markers require the configured identity", () => {
@@ -222,6 +291,7 @@ test("reproduce requires two matching observations and opens a draft only", asyn
   const result = await benny.runReproduce({
     config,
     trigger: trigger(),
+    featureId: "report",
     adapters: a,
     ledger: benny.createBennyLedger(),
   });
@@ -266,11 +336,54 @@ test("existing-fix mode verifies without authoring a competing patch", async () 
   const result = await benny.runReproduce({
     config,
     trigger: trigger(),
+    featureId: "report",
     adapters: a,
     ledger: benny.createBennyLedger(),
   });
   assert.equal(result.mode, "verify-existing-fix");
   assert.equal(result.draftPullRequest, undefined);
+});
+
+test("reproduce fails closed when the requested feature is not mapped", async () => {
+  const triaged = {
+    ...root,
+    messages: [
+      ...root.messages,
+      { authorId: "U1", text: "[benny:bug]", channelId: "C1", ts: "101", threadTs: "100" },
+    ],
+  };
+  const a = adapters({
+    slack: {
+      ...adapters().slack,
+      async readThread() {
+        return triaged;
+      },
+    },
+    control: control(),
+    featureMap,
+  });
+  const result = await benny.runReproduce({
+    config,
+    trigger: trigger(),
+    featureId: "missing-feature",
+    adapters: a,
+    ledger: benny.createBennyLedger(),
+  });
+  assert.equal(result.status, "blocked");
+  assert.match(result.reason, /does not cover/);
+  assert.equal(result.writes, 0);
+});
+
+test("schedule definitions use Pi every syntax derived from configuration", () => {
+  const workflows = benny.createBennyWorkflows(config);
+  assert.deepEqual(
+    workflows.map((workflow) => workflow.every),
+    ["1m", "1m"],
+  );
+  assert.equal(
+    workflows.every((workflow) => workflow.polling === "schedule-wake"),
+    true,
+  );
 });
 
 test("child briefs make prompt-injection content inert and forbid writes", () => {

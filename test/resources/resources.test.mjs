@@ -7,6 +7,7 @@ import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 const root = resolve(import.meta.dirname, "../..");
 const skillsDir = join(root, "skills");
 const agentsDir = join(root, "agents");
+const bennyDir = join(root, "automations", "benny");
 const expectedSkillNames = [
   "architect",
   "arena",
@@ -65,7 +66,7 @@ async function filesUnder(directory) {
   return files;
 }
 
-test("resource inventory is exactly 44 skills, 22 playbooks, and 2 agents", async () => {
+test("resource inventory is exactly 44 skills, 22 playbooks, 2 agents, and Benny", async () => {
   const skillDirs = (await readdir(skillsDir, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
@@ -83,7 +84,12 @@ test("resource inventory is exactly 44 skills, 22 playbooks, and 2 agents", asyn
     .map((entry) => entry.name)
     .toSorted();
   assert.deepEqual(agents, ["comment-sicko.md", "poteto-agent.md"]);
-  await assert.rejects(readdir(join(root, "automations")), { code: "ENOENT" });
+  const bennySkills = (await filesUnder(join(bennyDir, "skills"))).filter((path) =>
+    path.endsWith("SKILL.md"),
+  );
+  assert.equal(bennySkills.length, 3);
+  const workflows = (await readdir(bennyDir)).filter((name) => name.endsWith(".workflow.json"));
+  assert.deepEqual(workflows.toSorted(), ["reproduce.workflow.json", "triage.workflow.json"]);
 });
 
 test("Pi loads every skill without diagnostics", () => {
@@ -93,7 +99,11 @@ test("Pi loads every skill without diagnostics", () => {
 });
 
 test("active resources use Pi runtime contracts", async () => {
-  const paths = [...(await filesUnder(skillsDir)), ...(await filesUnder(agentsDir))];
+  const paths = [
+    ...(await filesUnder(skillsDir)),
+    ...(await filesUnder(agentsDir)),
+    ...(await filesUnder(bennyDir)),
+  ];
   const text = await Promise.all(paths.map((path) => readFile(path, "utf8")));
   const corpus = text.join("\n");
   for (const [token, pattern] of [
