@@ -27,6 +27,7 @@
     "verify:deterministic": "npm run format:check && npm run lint && npm run typecheck && npm test && node scripts/verify-package.mjs --manifest-only",
     "verify:foundation": "npm run typecheck && node --test test/package/*.test.mjs && node scripts/verify-package.mjs --manifest-only && node -e \"console.log('foundation verification passed')\"",
     "verify:tools": "node scripts/verify-upstream-tools.mjs",
+    "verify:pinned-git-install": "node scripts/verify-pinned-git-install.mjs",
     "verify": "node scripts/verify-all.mjs"
   },
   "devDependencies": {

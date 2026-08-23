@@ -8,9 +8,12 @@ Port privado e nativo do [pstack](https://github.com/cursor/plugins/tree/main/ps
 - `pi-subagents` `0.54.0` ou mais recente.
 - `@howaboua/pi-ask` `0.0.5` ou mais recente.
 - `pi-mcp-adapter` `2.27.0` ou mais recente para fluxos que consultam MCP.
+- Bun para as ferramentas locais que o utilizam.
+- `portless` para os fluxos locais que expõem serviços.
 - Playwright Chromium para verificação de navegador.
 - `github/gh-stack` como backend padrão de stacked PRs.
-- Graphite `gt` somente quando o backend opcional for selecionado.
+- Um provider externo de Slack e tracker, com suas credenciais e configuração, para os fluxos Benny.
+- Graphite `gt` como pré-requisito externo somente quando o backend opcional for selecionado.
 
 ## Instalação
 
@@ -83,7 +86,15 @@ npm run verify:browser
 npm run verify
 ```
 
-`npm run verify` inclui instalação limpa do pacote, Pi RPC real, testes de recursos, Playwright, evals, delivery e Benny.
+`npm run verify` é a suíte determinística local: não instala este pacote de um Git remoto e não executa julgamento por modelos ao vivo. O julgamento ao vivo é uma operação separada (`scripts/grade-live-eval.mjs`).
+
+Para provar manualmente a distribuição do commit exato publicado no origin privado, usando as credenciais Git já configuradas:
+
+```bash
+npm run verify:pinned-git-install
+```
+
+Essa verificação cria um projeto npm temporário, instala `HEAD` por SHA, importa `@shishiv/pi-pstack/benny` com jiti e confirma que o pacote é descoberto pelo Pi. Ela é deliberadamente local/credenciada e não faz parte de `npm run verify` nem de CI determinístico; o `HEAD` precisa estar publicado no origin.
 
 ## Atualização do upstream
 
