@@ -12,9 +12,8 @@ export interface SessionDiscoveryOptions {
 
 function projectNames(projectDirectory: string): Set<string> {
   const absolute = resolve(projectDirectory);
-  const base = basename(absolute);
   const slug = absolute.replace(/^[/\\]+/, "").replace(/[\\/]/g, "-");
-  return new Set([base, slug, `--${slug}--`]);
+  return new Set([`--${slug}--`]);
 }
 
 function within(parent: string, candidate: string): boolean {

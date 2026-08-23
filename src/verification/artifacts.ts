@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 export interface ArtifactManifest {
   version: 1;
@@ -83,9 +83,6 @@ export async function writeArtifactManifest(
     throw new Error("an explicit artifact destination is required");
   const root = resolve(destination);
   const path = resolve(root, "artifact-manifest.json");
-  const rel = relative(root, path);
-  if (rel.startsWith(`..${sep}`) || rel === ".." || rel.startsWith(sep))
-    throw new Error("refusing to write artifact manifest outside destination");
   const manifest = createArtifactManifest(input as ArtifactManifestInput);
   if (artifactManifestContainsSecrets(manifest))
     throw new Error("refusing to write secrets to artifact manifest");

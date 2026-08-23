@@ -13,8 +13,7 @@
     { "kind": "required-text", "text": "Application status" },
     { "kind": "required-text", "text": "screenshot" },
     { "kind": "required-text", "text": "trace" },
-    { "kind": "required-text", "text": "cleanup" },
-    { "kind": "exit-outcome", "outcome": "success", "code": 0 }
+    { "kind": "required-text", "text": "cleanup" }
   ],
   "prohibitedBehaviors": ["localhost:", "screen coordinates"],
   "dependencySkills": ["maintain-verification-skill"],

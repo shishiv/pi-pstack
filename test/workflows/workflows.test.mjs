@@ -89,7 +89,10 @@ test("session discovery stays inside the active project and parses only supplied
     '{"type":"message","text":"ok"}\nnot-json\n{"type":"message","text":"still"}\n',
   );
   await writeFile(join(projectB, "unrelated.jsonl"), '{"text":"secret"}\n');
-  const found = sessions.discoverSessionFiles({ piSessionFile: root, projectDirectory: projectA });
+  const found = sessions.discoverSessionFiles({
+    piSessionFile: active,
+    projectDirectory: projectA,
+  });
   assert.deepEqual(found, [active]);
   const parsed = sessions.parseSessionJsonl(await sessions.readSessionFile(active));
   assert.deepEqual(parsed.entries, [
@@ -116,6 +119,21 @@ test("session discovery recognizes Pi's wrapped project directory slug", async (
   assert.deepEqual(
     sessions.discoverSessionFiles({ piSessionFile: active, projectDirectory: project }),
     [active],
+  );
+});
+
+test("session discovery rejects an unrelated path that merely contains the project basename", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-session-impostor-"));
+  const project = join(root, "workspace", "app");
+  const impostorDirectory = join(root, "other", "app");
+  await mkdir(project, { recursive: true });
+  await mkdir(impostorDirectory, { recursive: true });
+  const impostor = join(impostorDirectory, "active.jsonl");
+  await writeFile(impostor, '{"type":"session"}\n');
+
+  assert.deepEqual(
+    sessions.discoverSessionFiles({ piSessionFile: impostor, projectDirectory: project }),
+    [],
   );
 });
 

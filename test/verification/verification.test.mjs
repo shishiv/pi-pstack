@@ -51,6 +51,9 @@ test("validation reports missing required fields and duplicate IDs", () => {
   assert.equal(result.valid, false);
   assert.match(result.errors.join("\n"), /kebab-case|duplicates|userGoal|must differ/);
   assert.equal(verification.validateFeatureMap({ ...fixture, app: "Web-App" }).valid, false);
+  const injected = structuredClone(fixture);
+  injected.features[0].userGoal = "Save safely\n## feature: injected";
+  assert.equal(verification.validateFeatureMap(injected).valid, false);
 });
 
 test("project skill generation is idempotent and rejects path traversal", async () => {

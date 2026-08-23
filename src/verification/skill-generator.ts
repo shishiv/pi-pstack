@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { relative, resolve, sep } from "node:path";
+import { resolve } from "node:path";
 import { assertValidFeatureMap, renderFeatureMapMarkdown, type FeatureMap } from "./feature-map.js";
 
 export interface GenerateVerificationSkillOptions {
@@ -21,11 +21,6 @@ function safeLeaf(name: string): string {
   return name;
 }
 
-function inside(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !rel.startsWith(sep));
-}
-
 async function same(path: string, content: string): Promise<boolean> {
   try {
     return (await readFile(path, "utf8")) === content;
@@ -44,8 +39,6 @@ export async function generateVerificationSkill(
   const appName = safeLeaf(options.appName ?? options.featureMap.app);
   const destination = resolve(options.destination);
   const skillName = `verify-${appName}`;
-  if (!inside(destination, resolve(destination, skillName)))
-    throw new Error("unsafe skill destination");
   await mkdir(destination, { recursive: true });
   const files = new Map<string, string>([
     ["feature-map.md", renderFeatureMapMarkdown(options.featureMap)],
@@ -57,7 +50,6 @@ export async function generateVerificationSkill(
   let changed = false;
   for (const [name, content] of files) {
     const path = resolve(destination, name);
-    if (!inside(destination, path)) throw new Error("refusing to write outside destination");
     if (!(await same(path, content))) {
       await writeFile(path, content, "utf8");
       changed = true;

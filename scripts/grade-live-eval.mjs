@@ -19,7 +19,7 @@ const observations = await Promise.all(
     structured: {},
     files: {},
     actions: [],
-    exit: { outcome: "success", code: 0 },
+    exit: { outcome: "unknown", code: null },
   })),
 );
 const blind = anonymizeCandidates(observations.slice(0, 2));

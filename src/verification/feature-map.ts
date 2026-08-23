@@ -65,6 +65,12 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function requireSingleLine(value: unknown, path: string, errors: string[]): void {
+  const normalized = text(value);
+  if (!normalized) errors.push(`${path} is required`);
+  else if (/[\r\n]/.test(value as string)) errors.push(`${path} must be one line`);
+}
+
 function list(value: string): string[] {
   return value
     .split(",")
@@ -250,14 +256,21 @@ export function validateFeatureMap(map: unknown): FeatureMapValidation {
       errors.push(`${prefix}.id must be kebab-case`);
     if (ids.has(item.id!)) errors.push(`${prefix}.id duplicates ${item.id}`);
     ids.add(item.id!);
-    for (const field of ["userGoal", "route", "expectedState", "brokenState"] as const) {
-      if (!text(item[field])) errors.push(`${prefix}.${field} is required`);
-    }
+    for (const field of ["userGoal", "route", "expectedState", "brokenState"] as const)
+      requireSingleLine(item[field], `${prefix}.${field}`, errors);
     if (!item.pointers || typeof item.pointers !== "object")
       errors.push(`${prefix}.pointers is required`);
     if (!item.accessible || typeof item.accessible !== "object")
       errors.push(`${prefix}.accessible is required`);
     if (!Array.isArray(item.prerequisites)) errors.push(`${prefix}.prerequisites must be an array`);
+    else
+      item.prerequisites.forEach((value, prerequisiteIndex) =>
+        requireSingleLine(value, `${prefix}.prerequisites[${prerequisiteIndex}]`, errors),
+      );
+    for (const [name, value] of Object.entries(item.pointers ?? {}))
+      if (value !== undefined) requireSingleLine(value, `${prefix}.pointers.${name}`, errors);
+    for (const [name, value] of Object.entries(item.accessible ?? {}))
+      if (value !== undefined) requireSingleLine(value, `${prefix}.accessible.${name}`, errors);
     if (!item.evidence || typeof item.evidence !== "object")
       errors.push(`${prefix}.evidence is required`);
     if (item.expectedState === item.brokenState && text(item.expectedState))
