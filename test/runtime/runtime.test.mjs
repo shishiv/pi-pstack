@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
@@ -13,9 +16,11 @@ function fakeRuntime({
   tools = ["subagent", "mcp", "ask"],
   commands = ["poteto-mode"],
   models = [],
+  exec = async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
 } = {}) {
   const handlers = new Map();
   const commandsByName = new Map();
+  const toolsByName = new Map();
   const entriesWritten = [];
   const messages = [];
   const notices = [];
@@ -25,6 +30,9 @@ function fakeRuntime({
     },
     registerCommand(name, options) {
       commandsByName.set(name, options.handler);
+    },
+    registerTool(definition) {
+      toolsByName.set(definition.name, definition);
     },
     appendEntry(type, data) {
       entriesWritten.push({ type, data });
@@ -38,6 +46,7 @@ function fakeRuntime({
     getCommands() {
       return commands.map((name) => ({ name, source: "extension", sourceInfo: {} }));
     },
+    exec,
     events: {},
     sessionManager: {
       getBranch() {
@@ -66,9 +75,12 @@ function fakeRuntime({
     isIdle() {
       return true;
     },
+    isProjectTrusted() {
+      return true;
+    },
   };
   potetoModeExtension(pi);
-  return { pi, ctx, handlers, commandsByName, entriesWritten, messages, notices };
+  return { pi, ctx, handlers, commandsByName, toolsByName, entriesWritten, messages, notices };
 }
 
 test("mode state restores only the latest entry in the active branch", () => {
@@ -157,4 +169,79 @@ test("task remains available when only optional MCP evidence is unavailable", as
   await runtime.handlers.get("session_start")?.({}, runtime.ctx);
   await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
   assert.equal(runtime.messages.length, 1);
+});
+
+test("verification tool generates a registered project-local skill", async () => {
+  const project = await mkdtemp(join(tmpdir(), "pstack-tool-project-"));
+  try {
+    const runtime = fakeRuntime();
+    runtime.ctx.cwd = project;
+    const tool = runtime.toolsByName.get("pstack_create_verification");
+    assert.ok(tool);
+    const result = await tool.execute(
+      "call-1",
+      {
+        app: "demo-app",
+        features: [
+          {
+            id: "save",
+            userGoal: "Save a document",
+            route: "/",
+            source: "src/save.ts",
+            role: "button",
+            name: "Save",
+            dataTestId: "save",
+            expectedState: "saved",
+            brokenState: "error",
+            prerequisites: [],
+            evidence: ["screenshot", "accessibility", "trace", "cleanup"],
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+    assert.equal(result.details.changed, true);
+    assert.match(
+      await readFile(join(project, ".pi", "skills", "verify-demo-app", "SKILL.md"), "utf8"),
+      /name: verify-demo-app/,
+    );
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test("delivery tool and bash hook reject an unreceipted merge", async () => {
+  const calls = [];
+  const runtime = fakeRuntime({
+    exec: async (command, args) => {
+      calls.push([command, ...args]);
+      if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
+      if (command === "gh" && args[0] === "repo")
+        return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
+      return { code: 0, stdout: "{}", stderr: "", killed: false };
+    },
+  });
+  const deliveryTool = runtime.toolsByName.get("pstack_delivery");
+  assert.ok(deliveryTool);
+  const rejected = await deliveryTool.execute(
+    "call-2",
+    { backend: "gh-stack", operation: "auto-merge", pullRequest: "42" },
+    undefined,
+    undefined,
+    runtime.ctx,
+  );
+  assert.match(rejected.content[0].text, /rejected/i);
+  assert.equal(
+    calls.some((argv) => argv.includes("merge")),
+    false,
+  );
+
+  await runtime.commandsByName.get("poteto-mode")?.("on", runtime.ctx);
+  const blocked = await runtime.handlers.get("tool_call")?.(
+    { toolName: "bash", input: { command: "gh stack merge --yes" } },
+    runtime.ctx,
+  );
+  assert.equal(blocked.block, true);
 });

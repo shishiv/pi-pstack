@@ -25,7 +25,7 @@ Resolve what is in scope vs explicitly out, technical or platform constraints, p
 Delegate codebase exploration (the **guard-the-context-window** principle skill).
 
 - Prefer `agent: "poteto-agent"`. `reviewer` is the fallback. Never use the built-in `plan` agent; it ignores this skill.
-- Pass `model:` explicitly per the configured roles (defaults `profile:fast` for code, `profile:reasoning` for judgment).
+- Omit `model` to use the selected Pi agent profile. Pass it explicitly only after `/subagents-models` proves the provider-qualified ID is available.
 
 Each explorer returns file pointers, conventions, dependencies, test infrastructure, and entry points. No inlined dumps.
 
@@ -73,7 +73,7 @@ Order phases so infrastructure and shared types land first (the **foundational-t
 
 For changes touching existing code, apply the **redesign-from-first-principles** principle skill: if we'd built this with the new requirement on day one, what would it look like? Redesign holistically; deliver incrementally.
 
-If a phase creates or edits a skill, the phase instructs the implementer to use the **create-skill** skill (Pi's skill workflow for authoring SKILL.md files).
+If a phase creates or edits a skill, the phase instructs the implementer to use the host's skill-authoring workflow and validate the resulting `SKILL.md`.
 
 ## 5. Verification per phase
 
@@ -83,8 +83,8 @@ Each phase needs both:
 
 **Runtime.** Exercise the feature on the matching surface via the relevant control skill:
 
-- Browser / Electron / Web UIs: the `control-ui` skill from the `installed Pi control skills` plugin.
-- CLIs and TUIs: the `control-cli` skill from the `installed Pi control skills` plugin.
+- Browser / Electron / Web UIs: the project `verify-*` skill, Playwright, or another installed browser-control skill.
+- CLIs and TUIs: the project `verify-*` skill or another installed terminal-control skill.
 - Native mobile: whatever simulator-driving skill your team has.
 - No control skill for the touched surface: flag it in the plan.
 
@@ -98,7 +98,7 @@ In the overview, name which poteto-mode non-negotiables the implementer must app
 - the **interrogate** skill for adversarial review on contested designs before shipping.
 - `/skill:unslop` over each diff before commit. the **unslop** skill over any prose surface.
 - the **show-me-your-work** skill to keep a decision trail when the plan is large enough to need an auditable record.
-- Pi's skill workflow **babysit** skill after opening the PR.
+- the **Babysit** playbook after opening the PR when the user asks for PR monitoring.
 
 ## 7. Hand back
 

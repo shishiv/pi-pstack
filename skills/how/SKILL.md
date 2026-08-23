@@ -44,9 +44,8 @@ The right decomposition depends on the question. Use your judgment. Narrow quest
 
 Spawn all explorers in a single message:
 
-- `agent`: `reviewer`
-- `model`: your configured how-explorer model (default `profile:fast`)
-- `readonly`: `true`
+- `agent`: `scout`
+- omit `model` to use the configured scout profile; pass a provider-qualified model only after `/subagents-models` confirms it
 
 Each explorer gets the same base prompt from `references/explorer-prompt.md` plus a specific exploration angle naming its slice. Each explorer should:
 - Start broad: Glob for relevant directories, Grep for key types/interfaces/class names
@@ -63,9 +62,8 @@ Then proceed to Step 3.
 
 Spawn a single subagent subagent that explores and explains in one pass:
 
-- `agent`: `reviewer`
-- `model`: your configured how-explainer model (default `profile:reasoning`)
-- `readonly`: `true`
+- `agent`: `oracle`
+- omit `model` to use the configured oracle profile
 
 The agent does its own exploration (Glob, Grep, Read) and writes the explanation directly. Read `references/explainer-prompt.md` for the communication style and output format. Same structure, just no explorer findings as input.
 
@@ -75,9 +73,8 @@ Proceed to Step 4.
 
 Once all explorers return, spawn a single subagent subagent to synthesize their findings into one coherent explanation:
 
-- `agent`: `reviewer`
-- `model`: your configured how-explainer model (default `profile:reasoning`)
-- `readonly`: `true`
+- `agent`: `oracle`
+- omit `model` to use the configured oracle profile
 
 The explainer gets all explorers' findings and writes the human-facing explanation (output format below). Read `references/explainer-prompt.md` for the full prompt template. The explainer reconciles overlapping findings, resolves contradictions, and weaves the slices into a unified picture.
 
@@ -109,12 +106,11 @@ Run the full explain flow above (Steps 1-4). You must understand the architectur
 
 ### Step 2. Spawn Critics
 
-After the explanation is complete, spawn one architectural critic per model in your configured how-critics list (defaults `profile:reasoning`, `profile:instruction`, `profile:fast`, `profile:review`), all in a single message.
+After the explanation is complete, spawn architectural critics through `reviewer` and `oracle`, plus explicitly selected available models when a cross-provider comparison is useful. Launch them in one `workflowScript` with `runs.all`.
 
 For each critic:
-- `agent`: `reviewer`
-- `model`: one model from the configured how-critics list. These are minimum reasoning levels. The lead should escalate any model when the architecture warrants deeper analysis.
-- `readonly`: `true`
+- `agent`: `reviewer` or `oracle`
+- omit `model` to use the agent profile, or pass one provider-qualified ID proven by `/subagents-models`
 
 Read `references/critic-prompt.md` for the prompt template. Each critic gets:
 1. The explanation from Step 1 (so they don't re-explore)

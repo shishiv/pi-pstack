@@ -22,7 +22,7 @@ Open a todolist with one entry per phase before launching anything.
 1. State the done predicate and the artifact or report the swarm must return.
 2. Choose the shape. Partition into slices, race N workers on identical briefs, or mix both. For a race or mixed shape, declare `first pass`, `rank all`, or `best-of` before spawning.
 3. Set N from the user or derive it from the shape. N is total workers, not the cloud concurrency limit.
-4. Pick the worker model from `swarm workers` in `~/.pi/agent/settings.json` when present. Otherwise use `profile:fast`. For a model race, name each arm's model up front.
+4. Use the configured `worker` agent by default. For a model race, inspect `/subagents-models`, name each available model up front, and pass it explicitly on that arm. Never use a symbolic profile name as a model ID.
 5. Give each worker its own writable output when it writes. Use a worktree, branch, or `/tmp/swarm-<slug>/worker-<n>/`.
 
 ## Phase B: Fan out

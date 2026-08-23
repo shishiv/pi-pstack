@@ -17,8 +17,9 @@
     "test": "node --test \"test/**/*.test.mjs\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:browser": "node test/verification/browser-e2e.mjs",
+    "verify:deterministic": "npm run format:check && npm run lint && npm run typecheck && npm test && node scripts/verify-package.mjs --manifest-only",
     "verify:foundation": "npm run typecheck && node --test test/package/*.test.mjs && node scripts/verify-package.mjs --manifest-only && node -e \"console.log('foundation verification passed')\"",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && node scripts/verify-package.mjs && node -e \"console.log('complete verification passed')\""
+    "verify": "node scripts/verify-all.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
@@ -33,8 +34,14 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.84.2",
+    "@howaboua/pi-ask": ">=0.0.5",
     "pi-mcp-adapter": ">=2.27.0",
     "pi-subagents": ">=0.54.0"
+  },
+  "peerDependenciesMeta": {
+    "pi-mcp-adapter": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=24"
@@ -51,5 +58,10 @@
         "./agents"
       ]
     }
+  },
+  "pi-subagents": {
+    "agents": [
+      "./agents"
+    ]
   }
 }

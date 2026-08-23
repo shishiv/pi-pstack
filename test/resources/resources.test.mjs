@@ -114,6 +114,9 @@ test("active resources use Pi runtime contracts", async () => {
     [".cursor", /\.cursor/],
     ["Cursor runtime", /\bCursor\b/],
     ["/loop", /\/loop\b/],
+    ["symbolic model profile", /profile:(?:fast|reasoning|instruction|review)/],
+    ["unsupported subagents.profiles", /subagents\.profiles/],
+    ["unsupported read-write acceptance role", /acceptanceRole:\s*read-write/],
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }

@@ -1,75 +1,60 @@
 ---
 name: setup-pstack
-description: Configure which models pstack uses per role. Detects your available models and writes an always-applied rule that overrides the skill defaults. Use for /skill:setup-pstack, "configure pstack models", or changing pstack's model choices.
+description: Configure pstack's semantic roles through Pi and pi-subagents model profiles. Use for /skill:setup-pstack, "configure pstack models", or changing pstack's model choices.
 ---
 
 # Setup pstack
 
-Write Pi's `~/.pi/agent/settings.json` model profiles and per-agent role
-overrides. Skills use role names and profiles, never provider-specific model
-slugs, so the configuration remains portable across Pi providers.
+Use Pi's model registry and pi-subagents profiles. Never copy foreign model slugs, invent a model ID, or replace the user's complete settings file.
 
-## Steps
+## 1. Inspect the live registry
 
-### 1. Detect available models
+Run `/subagents-models` to inspect the models resolved for `scout`, `researcher`, `worker`, `reviewer`, `oracle`, `poteto-agent`, and `comment-sicko`. Use `ctx.scopedModels` or `ctx.modelRegistry.getAvailable()` when this runs from an extension.
 
-Enumerate the model profiles and model IDs available to Pi's `subagent` in
-this session. If Pi exposes a model API or CLI, prefer it. If no profiles are
-configured, use `inherit` and ask only when a real preference is needed.
+If the provider catalogue is stale, use `/subagents-refresh-provider-models <provider>`. Do not infer entitlement from documentation.
 
-### 2. Load current state
+## 2. Map semantic roles
 
-The default role-to-model mapping is the rule shape shown in step 5 below. If `~/.pi/agent/settings.json` already exists, read it and treat its values as the current choices. Otherwise start from those defaults.
+Map pstack work to Pi agents rather than to provider-specific names:
 
-### 3. Map and confirm
+| pstack role | Pi agent |
+| --- | --- |
+| fast exploration | `scout` |
+| external research | `researcher` |
+| implementation and precise execution | `worker` |
+| independent code review | `reviewer` |
+| judgment, synthesis, and cross-judge | `oracle` |
+| full pstack style | `poteto-agent` |
+| comment-only review | `comment-sicko` |
 
-Show every role with its current Pi profile. Ask whether to accept or change
-specific roles, offering `inherit`, `fast`, `reasoning`, `instruction`, and
-`review`. Panel roles are lists; one child runs per entry, so list length sets
-fan-out. `swarm workers` is the default worker role unless a race assigns an
-explicit profile.
+For a multi-model panel, select available models explicitly on each `runs.all` child. The execution plan may contain provider/model identities. Candidate outputs passed to a blind judge must not.
 
-### 4. Validate
+## 3. Choose and load a Pi profile
 
-Every profile must resolve in Pi's model registry, and `inherit` always passes.
-If a profile is unavailable, stop and ask again. A role pointing at an
-unavailable model breaks every delegation that reads it.
+Prefer Pi's existing profile flow:
 
-### 5. Write the rule
-
-Write valid JSON to `~/.pi/agent/settings.json` and overwrite the whole file so
-re-runs stay idempotent. Store profiles in `subagents.profiles` and map
-semantic roles to Pi agent overrides. Shape:
-
-```
-{
-  "subagents": {
-    "defaultModel": "inherit",
-    "profiles": {
-      "fast": { "model": "<Pi-registered-fast-model>" },
-      "reasoning": { "model": "<Pi-registered-reasoning-model>" },
-      "instruction": { "model": "<Pi-registered-instruction-model>" },
-      "review": { "model": "<Pi-registered-review-model>" }
-    },
-    "agentOverrides": {
-      "poteto-agent": { "model": "inherit" },
-      "comment-sicko": { "acceptanceRole": "read-only" }
-    }
-  },
-  "pstackRoles": {
-    "feature": "fast",
-    "bug-fix": "instruction",
-    "judgment": "reasoning",
-    "review": "review",
-    "swarm-workers": "fast"
-  }
-}
+```text
+/subagents-generate-profiles <provider>
+/subagents-load-profile <provider.profile>
+/subagents-check-profile <provider.profile>
 ```
 
-### 6. Confirm
+If the existing profile already gives each role an appropriate model, make no change. If an override is necessary, merge only the named entries under `subagents.agentOverrides` in `~/.pi/agent/settings.json` or project `.pi/settings.json`. Preserve every unrelated setting. Use `model: "inherit"` when the role should follow the parent.
 
-Tell the user the rule was written and that it applies to new sessions. Re-running this skill updates it.
+Never add ad hoc profile or pstack-role objects to settings. pi-subagents stores generated profiles under `~/.pi/agent/profiles/pi-subagents/` and owns their format.
 
-### 7. Offer a verification skill (optional)
+## 4. Verify
 
-Check whether the project has a way to drive the real app for proof (a `verify-*` skill, or an existing harness). If not, offer once: "want a project-local verification skill, so agents can drive the app the way a user does and prove changes work? I can generate one with /skill:create-verification-skill." On yes, invoke `/skill:create-verification-skill` (resolves wherever pstack is installed — workspace, user, or plugin). On no, move on without pushing.
+Run `/subagents-check-profile <profile>` and then start a fresh Pi session. Confirm that:
+
+- `subagent` is available;
+- `poteto-agent` and `comment-sicko` appear in agent discovery;
+- `comment-sicko` remains read-only;
+- every explicit model resolves through the live registry;
+- a two-candidate blind eval launches different configured models when the profile provides them.
+
+An unresolved model or missing tool is a failed setup. Report the exact gap and leave the existing configuration unchanged.
+
+## 5. Establish verification
+
+If the project has no `verify-*` skill and feature map, offer `/skill:create-verification-skill`. Model routing does not create trust by itself. The project earns higher autonomy only after its real verification and eval gates pass.

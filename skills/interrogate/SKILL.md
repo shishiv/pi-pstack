@@ -33,19 +33,18 @@ Write one clear paragraph. Reviewers challenge whether the work achieves the int
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in a single message using the subagent tool. Use the `interrogate reviewers` list from `~/.pi/agent/settings.json` when present, one reviewer per entry, extending or shrinking the Reviewer A/B/C/D labels below to the configured entry count; otherwise use the table defaults.
+Launch all reviewers in one `workflowScript` with `runs.all`. Inspect `/subagents-models` when explicit model diversity is required. Extend or shrink the Reviewer A/B/C/D labels below to the available independent reviewers; otherwise use the table defaults and their configured agent profiles.
 
-| Subagent | Default model |
-|----------|---------------|
-| Reviewer A | `profile:reasoning` |
-| Reviewer B | `profile:instruction` |
-| Reviewer C | `profile:fast` |
-| Reviewer D | `profile:review` |
+| Subagent | Default Pi agent |
+|----------|------------------|
+| Reviewer A | `reviewer` |
+| Reviewer B | `oracle` |
+| Reviewer C | `reviewer` with a distinct available model |
+| Reviewer D | `oracle` with a distinct available model |
 
 For each reviewer:
-- `agent`: `reviewer`
-- `model`: the configured `interrogate reviewers` entry, or the table default with no configured line
-- `readonly`: `true`
+- `agent`: the table entry
+- `model`: omit it for the configured agent profile, or use a provider-qualified ID proven by `/subagents-models`
 
 If a model slug is rejected as unresolvable when you try to spawn the subagent, check the valid slugs in the subagent tool's error message, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with the valid slug, and open a separate PR to update the configured value or default table. Do not block the review on the slug issue. If the configured value is `inherit-parent` or `auto`, omit `model` instead; never treat those aliases as broken slugs or enter this fallback for them.
 
