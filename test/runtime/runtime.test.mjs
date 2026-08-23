@@ -92,7 +92,7 @@ test("capability preflight reports missing tools, commands, and roles", () => {
     requiredRoles: ["reasoning"],
   });
   assert.equal(result.ok, false);
-  assert.deepEqual(result.missingTools, ["mcp", "ask"]);
+  assert.deepEqual(result.missingTools, ["ask"]);
   assert.deepEqual(result.missingCommands, ["poteto-mode"]);
   assert.deepEqual(result.missingRoles, ["reasoning"]);
 });
@@ -144,10 +144,17 @@ test("extension commands persist, restore, isolate, and inject loaded skill cont
   assert.match(isolated.notices.at(-1).message, /off|inactive/i);
 });
 
-test("task fails closed when expected runtime capabilities are unavailable", async () => {
-  const runtime = fakeRuntime({ tools: ["subagent", "ask"] });
+test("task fails closed when a required runtime capability is unavailable", async () => {
+  const runtime = fakeRuntime({ tools: ["ask", "mcp"] });
   await runtime.handlers.get("session_start")?.({}, runtime.ctx);
   await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
   assert.equal(runtime.messages.length, 0);
-  assert.match(runtime.notices.at(-1).message, /mcp/);
+  assert.match(runtime.notices.at(-1).message, /subagent/);
+});
+
+test("task remains available when only optional MCP evidence is unavailable", async () => {
+  const runtime = fakeRuntime({ tools: ["subagent", "ask"] });
+  await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+  await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
+  assert.equal(runtime.messages.length, 1);
 });

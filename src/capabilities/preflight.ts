@@ -1,6 +1,6 @@
 import { resolveModelRoles, type ModelRole, type PiModel } from "../models/roles.js";
 
-export const EXPECTED_TOOLS = ["subagent", "mcp", "ask"] as const;
+export const EXPECTED_TOOLS = ["subagent", "ask"] as const;
 
 export interface NamedCapability {
   name: string;
