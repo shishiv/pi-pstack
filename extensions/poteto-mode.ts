@@ -218,15 +218,19 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       if (currentHead.code !== 0 || repository.code !== 0) {
         return deliveryRejected("repository identity or HEAD could not be resolved");
       }
-      if (params.operation === "auto-merge") {
+      if (params.operation !== "inspect") {
+        const level = deliveryLevel(params.operation);
         const authorization = authorizeDelivery({
           receipt: params.receipt as EvidenceReceipt | undefined,
           repoIdentity: repository.stdout.trim(),
           currentHeadSha: currentHead.stdout.trim(),
           backend: params.backend as StackBackendName,
-          level: "auto-merge",
+          level,
         });
         if (!authorization.allowed) return deliveryRejected(authorization.reasons.join("; "));
+        if (authorization.draftOnly && params.operation === "submit" && params.draft === false) {
+          return deliveryRejected("Benny delivery is draft-only");
+        }
       }
       const runner = {
         async run(argv: readonly string[]) {
@@ -268,11 +272,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     if (!active || event.toolName !== "bash") return;
     const command = (event.input as { command?: unknown }).command;
     if (typeof command !== "string") return;
-    if (
-      /(?:^|[;&|]\s*)(?:gh\s+(?:stack\s+merge|pr\s+merge)|gt\s+(?:merge|submit\b[^\n]*--merge-when-ready))\b/.test(
-        command,
-      )
-    ) {
+    if (containsDirectMerge(command)) {
       return {
         block: true,
         reason: "Use pstack_delivery so exact-head evidence and autonomy gates are enforced.",
@@ -294,6 +294,25 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       systemPrompt: `${event.systemPrompt}\n\n## Loaded skill: ${skill.filePath ?? "poteto-mode"}\n\n${content}`,
     };
   });
+}
+
+function deliveryLevel(operation: string): "prepare" | "pr" | "merge-ready" | "auto-merge" {
+  if (operation === "prepare") return "prepare";
+  if (operation === "submit") return "pr";
+  if (operation === "sync" || operation === "rebase") return "merge-ready";
+  if (operation === "auto-merge") return "auto-merge";
+  throw new Error(`unsupported mutating delivery operation: ${operation}`);
+}
+
+function containsDirectMerge(command: string): boolean {
+  const value = command.replace(/\\\r?\n/g, " ").toLowerCase();
+  return (
+    /\bgh\b[\s\S]{0,160}\bstack\s+merge\b/.test(value) ||
+    /\bgh\b[\s\S]{0,160}\bpr\s+merge\b/.test(value) ||
+    /\bgh\s+api\b[\s\S]{0,240}\/pulls\/[1-9][0-9]*\/merge\b/.test(value) ||
+    /\bgt\s+merge\b/.test(value) ||
+    /\bgt\s+submit\b[^\n]*--merge-when-ready\b/.test(value)
+  );
 }
 
 function deliveryRejected(reason: string) {

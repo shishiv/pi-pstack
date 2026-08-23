@@ -374,6 +374,45 @@ test("reproduce fails closed when the requested feature is not mapped", async ()
   assert.equal(result.writes, 0);
 });
 
+test("cleanup failure cannot strand a reproduce ledger claim", async () => {
+  const triaged = {
+    ...root,
+    messages: [
+      ...root.messages,
+      { authorId: "U1", text: "[benny:bug]", channelId: "C1", ts: "101", threadTs: "100" },
+    ],
+  };
+  const a = adapters({
+    slack: {
+      ...adapters().slack,
+      async readThread() {
+        return triaged;
+      },
+    },
+    control: control({
+      async observe() {
+        return { matched: false, symptom: "none", expected: "saved" };
+      },
+      async cleanup() {
+        throw new Error("cleanup failed");
+      },
+    }),
+    featureMap,
+  });
+  const ledger = benny.createBennyLedger();
+  await assert.rejects(
+    benny.runReproduce({
+      config,
+      trigger: trigger(),
+      featureId: "report",
+      adapters: a,
+      ledger,
+    }),
+    /cleanup failed/,
+  );
+  assert.equal(ledger.claim("reproduce:C1:100"), true);
+});
+
 test("schedule definitions use Pi every syntax derived from configuration", () => {
   const workflows = benny.createBennyWorkflows(config);
   assert.deepEqual(

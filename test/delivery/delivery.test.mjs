@@ -105,6 +105,22 @@ test("Graphite is capability-gated while gh stack remains the default", () => {
   assert.ok(withGt.graphite);
 });
 
+test("stack adapters reject flag-shaped branch and pull request operands", async () => {
+  const backend = new delivery.GhStackBackend(runnerFor("gh stack"));
+  await assert.rejects(
+    backend.execute({ kind: "prepare", branch: "--help" }),
+    /unsafe branch operand/,
+  );
+  await assert.rejects(
+    backend.execute({ kind: "prepare", branch: "feature/../main" }),
+    /unsafe branch operand/,
+  );
+  await assert.rejects(
+    backend.execute({ kind: "auto-merge", pullRequest: "--admin" }),
+    /unsafe pull request operand/,
+  );
+});
+
 function receipt(overrides = {}) {
   return delivery.createEvidenceReceipt({
     repoIdentity: "acme/demo",
@@ -118,7 +134,9 @@ function receipt(overrides = {}) {
         { name: "tests", status: "passed" },
       ],
     },
-    liveVerificationArtifacts: [{ kind: "playwright-trace", path: "artifacts/trace.zip" }],
+    liveVerificationArtifacts: [
+      { kind: "playwright-trace", path: "artifacts/trace.zip", sha256: "a".repeat(64) },
+    ],
     independentReview: { status: "approved", reviewer: "reviewer-1" },
     evalResult: { status: "passed", revision: "eval@1" },
     backend: "gh-stack",
@@ -166,6 +184,15 @@ test("negative controls fail closed for every delivery gate", () => {
     ],
     ["not-ready project", { projectReadiness: "not-ready" }, /project readiness/],
     ["Benny merge", { receipt: receipt({ origin: "benny" }), origin: "benny" }, /draft-only/],
+    [
+      "artifact without digest",
+      {
+        receipt: receipt({
+          liveVerificationArtifacts: [{ kind: "trace", path: "artifacts/trace.zip" }],
+        }),
+      },
+      /artifact digest/,
+    ],
   ];
   for (const [, overrides, expected] of cases) {
     const result = delivery.authorizeDelivery({

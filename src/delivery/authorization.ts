@@ -49,9 +49,15 @@ export function validateEvidenceReceipt(receipt: unknown): string[] {
   if (!Array.isArray(artifacts) || artifacts.length === 0) {
     reasons.push("missing evidence: live verification artifacts");
   } else if (
-    artifacts.some((artifact) => !artifact || !nonEmpty(artifact.kind) || !nonEmpty(artifact.path))
+    artifacts.some(
+      (artifact) =>
+        !artifact ||
+        !nonEmpty(artifact.kind) ||
+        !nonEmpty(artifact.path) ||
+        !/^[a-f0-9]{64}$/i.test(artifact.sha256 ?? ""),
+    )
   ) {
-    reasons.push("invalid live verification artifacts");
+    reasons.push("invalid live verification artifact digest");
   }
 
   const review = value.independentReview;

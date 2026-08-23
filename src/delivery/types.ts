@@ -31,7 +31,7 @@ export interface DeterministicChecks {
 export interface LiveVerificationArtifact {
   kind: string;
   path: string;
-  sha256?: string;
+  sha256: string;
 }
 
 export interface IndependentReview {

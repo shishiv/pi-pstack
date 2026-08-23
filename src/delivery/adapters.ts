@@ -39,6 +39,27 @@ function asCommandFailure(error: unknown): CommandResult {
   };
 }
 
+function branchOperand(value: string): string {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) ||
+    value.includes("..") ||
+    value.includes("@{") ||
+    value.includes("//") ||
+    value.endsWith("/") ||
+    value.endsWith(".") ||
+    value.endsWith(".lock")
+  ) {
+    throw new Error(`unsafe branch operand: ${value}`);
+  }
+  return value;
+}
+
+function pullRequestOperand(value: string | undefined): string[] {
+  if (value === undefined) return [];
+  if (!/^[1-9][0-9]*$/.test(value)) throw new Error(`unsafe pull request operand: ${value}`);
+  return [value];
+}
+
 async function run(runner: CommandRunner, argv: readonly string[]): Promise<CommandResult> {
   try {
     return await runner.run(argv);
@@ -95,7 +116,7 @@ export class GhStackBackend extends CliStackBackend {
       case "inspect":
         return ["gh", "stack", "view", "--json"];
       case "prepare":
-        return ["gh", "stack", "add", operation.branch];
+        return ["gh", "stack", "add", branchOperand(operation.branch)];
       case "submit":
         return ["gh", "stack", "submit", "--auto", ...(operation.draft ? [] : ["--open"])];
       case "sync":
@@ -103,13 +124,7 @@ export class GhStackBackend extends CliStackBackend {
       case "rebase":
         return ["gh", "stack", "rebase"];
       case "auto-merge":
-        return [
-          "gh",
-          "stack",
-          "merge",
-          ...(operation.pullRequest ? [operation.pullRequest] : []),
-          "--yes",
-        ];
+        return ["gh", "stack", "merge", ...pullRequestOperand(operation.pullRequest), "--yes"];
     }
   }
 }
@@ -125,7 +140,7 @@ export class GraphiteBackend extends CliStackBackend {
       case "inspect":
         return ["gt", "log", "short", "--stack", "--reverse"];
       case "prepare":
-        return ["gt", "create", operation.branch, "--no-interactive"];
+        return ["gt", "create", branchOperand(operation.branch), "--no-interactive"];
       case "submit":
         return [
           "gt",

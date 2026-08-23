@@ -18,6 +18,7 @@ function fakeRuntime({
   models = [],
   exec = async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
 } = {}) {
+  let currentEntries = entries;
   const handlers = new Map();
   const commandsByName = new Map();
   const toolsByName = new Map();
@@ -50,10 +51,10 @@ function fakeRuntime({
     events: {},
     sessionManager: {
       getBranch() {
-        return entries;
+        return currentEntries;
       },
       getEntries() {
-        return entries;
+        return currentEntries;
       },
     },
   };
@@ -80,7 +81,19 @@ function fakeRuntime({
     },
   };
   potetoModeExtension(pi);
-  return { pi, ctx, handlers, commandsByName, toolsByName, entriesWritten, messages, notices };
+  return {
+    pi,
+    ctx,
+    handlers,
+    commandsByName,
+    toolsByName,
+    entriesWritten,
+    messages,
+    notices,
+    setEntries(next) {
+      currentEntries = next;
+    },
+  };
 }
 
 test("mode state restores only the latest entry in the active branch", () => {
@@ -171,6 +184,19 @@ test("task remains available when only optional MCP evidence is unavailable", as
   assert.equal(runtime.messages.length, 1);
 });
 
+test("one extension instance resets sticky state when Pi switches sessions", async () => {
+  const runtime = fakeRuntime({
+    entries: [{ type: "custom", customType: "poteto-mode", data: { active: true } }],
+  });
+  await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+  await runtime.commandsByName.get("poteto-mode")?.("status", runtime.ctx);
+  assert.match(runtime.notices.at(-1).message, /active/i);
+  runtime.setEntries([]);
+  await runtime.handlers.get("session_start")?.({ reason: "new" }, runtime.ctx);
+  await runtime.commandsByName.get("poteto-mode")?.("status", runtime.ctx);
+  assert.match(runtime.notices.at(-1).message, /off/i);
+});
+
 test("verification tool generates a registered project-local skill", async () => {
   const project = await mkdtemp(join(tmpdir(), "pstack-tool-project-"));
   try {
@@ -244,4 +270,90 @@ test("delivery tool and bash hook reject an unreceipted merge", async () => {
     runtime.ctx,
   );
   assert.equal(blocked.block, true);
+});
+
+test("delivery tool requires receipts for every mutation and enforces Benny drafts", async () => {
+  const calls = [];
+  const runtime = fakeRuntime({
+    exec: async (command, args) => {
+      calls.push([command, ...args]);
+      if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
+      if (command === "gh" && args[0] === "repo")
+        return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
+      return { code: 0, stdout: "{}", stderr: "", killed: false };
+    },
+  });
+  const tool = runtime.toolsByName.get("pstack_delivery");
+  const withoutReceipt = await tool.execute(
+    "call-3",
+    { backend: "gh-stack", operation: "submit", draft: false },
+    undefined,
+    undefined,
+    runtime.ctx,
+  );
+  assert.match(withoutReceipt.content[0].text, /rejected/i);
+  assert.equal(
+    calls.some((argv) => argv.includes("submit")),
+    false,
+  );
+
+  const receipt = {
+    version: 1,
+    repoIdentity: "acme/demo",
+    headSha: "abc123",
+    featureMapRevision: "map@1",
+    skillRevision: "skill@1",
+    deterministicChecks: {
+      status: "green",
+      checks: [{ name: "tests", status: "passed" }],
+    },
+    liveVerificationArtifacts: [
+      { kind: "trace", path: "artifacts/trace.zip", sha256: "a".repeat(64) },
+    ],
+    independentReview: { status: "approved", reviewer: "reviewer" },
+    evalResult: { status: "passed" },
+    backend: "gh-stack",
+    projectReadiness: "ready",
+    origin: "benny",
+  };
+  const benny = await tool.execute(
+    "call-4",
+    { backend: "gh-stack", operation: "submit", draft: false, receipt },
+    undefined,
+    undefined,
+    runtime.ctx,
+  );
+  assert.match(benny.content[0].text, /draft/i);
+  assert.equal(
+    calls.some((argv) => argv.includes("submit")),
+    false,
+  );
+});
+
+test("active mode blocks direct merge variants and allows ordinary gh reads", async () => {
+  const runtime = fakeRuntime();
+  await runtime.commandsByName.get("poteto-mode")?.("on", runtime.ctx);
+  const commands = [
+    "cd repo\ngh pr merge 42 --auto",
+    'bash -c "gh stack merge --yes"',
+    "$(gh pr merge 42)",
+    "gh --repo acme/demo pr merge 42",
+    "gh api --method PUT repos/acme/demo/pulls/42/merge",
+    "gt merge",
+    "gt submit --merge-when-ready",
+  ];
+  for (const command of commands) {
+    const result = await runtime.handlers.get("tool_call")?.(
+      { toolName: "bash", input: { command } },
+      runtime.ctx,
+    );
+    assert.equal(result?.block, true, command);
+  }
+  assert.equal(
+    await runtime.handlers.get("tool_call")?.(
+      { toolName: "bash", input: { command: "gh pr view 42" } },
+      runtime.ctx,
+    ),
+    undefined,
+  );
 });
