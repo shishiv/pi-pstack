@@ -39,16 +39,54 @@ export interface FileEvidence {
   sha256: string;
 }
 
+/** The on-disk, versioned statement produced by an independent reviewer. */
+export interface StructuredReviewEvidence {
+  version: 1;
+  type: "review-evidence";
+  repoIdentity: string;
+  headSha: string;
+  reviewer: string;
+  runId: string;
+  verdict: "VERIFIED";
+  rawReview: FileEvidence;
+}
+
 export interface IndependentReview {
   status: "approved" | "unresolved" | "changes-requested";
   reviewer: string;
   evidence: FileEvidence;
+  /** Values copied from and checked against the structured review artifact. */
+  repoIdentity?: string;
+  headSha?: string;
+  runId?: string;
+  verdict?: "VERIFIED";
 }
 
 export interface EvalResult {
   status: "passed" | "failed" | "not-run";
   evidence: FileEvidence;
   summary?: string;
+}
+
+export interface StructuredEvalEvidence {
+  version: 1;
+  type: "eval-evidence";
+  repoIdentity: string;
+  headSha: string;
+  targetSkill: FileEvidence;
+  candidates: readonly [
+    { label: "Candidate A"; current: true; grade: unknown },
+    { label: "Candidate B"; current: false; grade: unknown },
+  ];
+  judge: {
+    winner: "Candidate A" | "Candidate B";
+    rationale: string;
+  };
+  aggregate: {
+    accepted: boolean;
+    winner: "Candidate A" | "Candidate B" | null;
+    reason: string;
+  };
 }
 
 /**
@@ -65,6 +103,10 @@ export interface EvidenceReceipt {
   liveVerificationArtifacts: readonly LiveVerificationArtifact[];
   independentReview: IndependentReview;
   evalResult: EvalResult;
+  /** Digests and semantics are re-read from these structured files at delivery time. */
+  reviewEvidence?: FileEvidence;
+  evalEvidence?: FileEvidence;
+  artifactManifest?: FileEvidence;
   backend: StackBackendName;
   /** Optional request context; authorization may supply these independently. */
   projectReadiness?: ProjectReadiness;
