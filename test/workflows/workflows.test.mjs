@@ -148,6 +148,20 @@ test("session discovery rejects an unrelated path that merely contains the proje
   );
 });
 
+test("session discovery rejects a project-slug JSONL basename outside Pi's session layout", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-session-slug-impostor-"));
+  const project = join(root, "workspace", "app");
+  await mkdir(project, { recursive: true });
+  const slug = project.replace(/^[/\\]+/, "").replace(/[\\/]/g, "-");
+  const impostor = join(root, `--${slug}--.jsonl`);
+  await writeFile(impostor, '{"type":"session"}\n');
+
+  assert.deepEqual(
+    sessions.discoverSessionFiles({ piSessionFile: impostor, projectDirectory: project }),
+    [],
+  );
+});
+
 test("long-run plans choose a native wake mechanism instead of polling", () => {
   assert.deepEqual(wake.planLongRunWake({ childRunId: "run-1" }), {
     mechanism: "async-child-wait",

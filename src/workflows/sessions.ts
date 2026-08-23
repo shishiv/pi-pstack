@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { existsSync, lstatSync, readdirSync } from "node:fs";
-import { basename, relative, resolve, sep } from "node:path";
+import { basename, dirname, relative, resolve, sep } from "node:path";
 
 export interface SessionDiscoveryOptions {
   /** PI_SESSION_FILE may be one active JSONL file or a project-scoped directory. */
@@ -26,9 +26,12 @@ function within(parent: string, candidate: string): boolean {
 function belongsToProject(candidate: string, projectDirectory: string): boolean {
   if (within(projectDirectory, candidate)) return true;
   const names = projectNames(projectDirectory);
-  return resolve(candidate)
+  // A session file can itself be named like Pi's wrapped project slug, but
+  // that is not evidence that its arbitrary parent directory is this project.
+  // Real Pi layouts put the slug in a directory above the JSONL file.
+  return resolve(dirname(candidate))
     .split(/[\\/]/)
-    .some((part) => names.has(part) || names.has(part.replace(/\.jsonl$/i, "")));
+    .some((part) => names.has(part));
 }
 
 function sessionIdMatches(candidate: string, sessionId: string | undefined): boolean {

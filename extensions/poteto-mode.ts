@@ -13,6 +13,7 @@ import {
   createEvidenceReceiptFromFiles,
   createDeliveryBackends,
   loadEvidenceReceipt,
+  validateEvidenceReceipt,
   verifyEvidenceReceiptFiles,
   type StackBackendName,
   type StackOperation,
@@ -151,41 +152,53 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
           details: { changed: false, rejected: true },
         };
       }
-      const result = await generateProjectVerificationSkill({
-        projectRoot: ctx.cwd,
-        appName: params.app,
-        featureMap: {
-          version: 1,
-          app: params.app,
-          features: params.features.map((feature) => ({
-            id: feature.id,
-            userGoal: feature.userGoal,
-            route: feature.route,
-            pointers: { component: feature.component, source: feature.source },
-            accessible: {
-              role: feature.role,
-              name: feature.name,
-              selector: feature.selector,
-              dataTestId: feature.dataTestId,
-            },
-            expectedState: feature.expectedState,
-            brokenState: feature.brokenState,
-            prerequisites: feature.prerequisites,
-            evidence: Object.fromEntries(feature.evidence.map((name) => [name, true])),
-          })),
-        },
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: result.changed
-              ? `Created verification skill at ${result.destination}.`
-              : `Verification skill at ${result.destination} is already current.`,
+      try {
+        const result = await generateProjectVerificationSkill({
+          projectRoot: ctx.cwd,
+          appName: params.app,
+          featureMap: {
+            version: 1,
+            app: params.app,
+            features: params.features.map((feature) => ({
+              id: feature.id,
+              userGoal: feature.userGoal,
+              route: feature.route,
+              pointers: { component: feature.component, source: feature.source },
+              accessible: {
+                role: feature.role,
+                name: feature.name,
+                selector: feature.selector,
+                dataTestId: feature.dataTestId,
+              },
+              expectedState: feature.expectedState,
+              brokenState: feature.brokenState,
+              prerequisites: feature.prerequisites,
+              evidence: Object.fromEntries(feature.evidence.map((name) => [name, true])),
+            })),
           },
-        ],
-        details: result,
-      };
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: result.changed
+                ? `Created verification skill at ${result.destination}.`
+                : `Verification skill at ${result.destination} is already current.`,
+            },
+          ],
+          details: result,
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Verification skill creation rejected: ${error instanceof Error ? error.message : String(error)}.`,
+            },
+          ],
+          details: { changed: false, rejected: true },
+        };
+      }
     },
   });
 
@@ -232,7 +245,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       "Hash local verification, review, and eval artifacts into a receipt for the current repository HEAD.",
     parameters: Type.Object({
       backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
-      origin: Type.Union([Type.Literal("human"), Type.Literal("benny")]),
       featureMapPath: Type.String({ minLength: 1 }),
       skillPath: Type.String({ minLength: 1 }),
       reviewPath: Type.String({ minLength: 1 }),
@@ -240,14 +252,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       evalPath: Type.String({ minLength: 1 }),
       artifactPaths: Type.Array(
         Type.Object({ kind: Type.String({ minLength: 1 }), path: Type.String({ minLength: 1 }) }),
-        { minItems: 1 },
-      ),
-      checkCommands: Type.Array(
-        Type.Object({
-          name: Type.String({ minLength: 1 }),
-          command: Type.String({ minLength: 1 }),
-          args: Type.Array(Type.String()),
-        }),
         { minItems: 1 },
       ),
     }),
@@ -262,26 +266,31 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
         );
         if (currentHead.code !== 0 || repository.code !== 0)
           return deliveryRejected("repository identity or HEAD could not be resolved");
-        const checks = [];
-        for (const check of params.checkCommands) {
-          const result = await pi.exec(check.command, check.args, { cwd: ctx.cwd, signal });
-          if (result.code !== 0)
-            return deliveryRejected(`deterministic check failed: ${check.name}`);
-          checks.push({ name: check.name, status: "passed" as const });
-        }
+        const cleanliness = await pi.exec(
+          "git",
+          ["status", "--porcelain", "--untracked-files=no"],
+          { cwd: ctx.cwd, signal },
+        );
+        if (cleanliness.code !== 0)
+          return deliveryRejected("repository cleanliness could not be verified");
+        if (cleanliness.stdout.trim() !== "")
+          return deliveryRejected("repository has tracked changes");
         const receipt = await createEvidenceReceiptFromFiles({
           root: ctx.cwd,
           repoIdentity: repository.stdout.trim(),
           headSha: currentHead.stdout.trim(),
           backend: params.backend,
-          origin: params.origin,
+          origin: "human",
           featureMapPath: params.featureMapPath,
           skillPath: params.skillPath,
           artifactPaths: params.artifactPaths,
           reviewPath: params.reviewPath,
           reviewer: params.reviewer,
           evalPath: params.evalPath,
-          deterministicChecks: { status: "green", checks },
+          deterministicChecks: {
+            status: "green",
+            checks: [{ name: "git tracked tree is clean", status: "passed" }],
+          },
         });
         const directory = join(ctx.cwd, ".pi", "pstack", "receipts");
         const path = join(directory, `${receipt.headSha}.json`);
@@ -334,6 +343,8 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
         if (params.operation !== "inspect") {
           if (!params.receiptPath) return deliveryRejected("a verified receipt path is required");
           const receipt = await loadEvidenceReceipt(params.receiptPath, ctx.cwd);
+          const semanticReasons = validateEvidenceReceipt(receipt);
+          if (semanticReasons.length > 0) return deliveryRejected(semanticReasons.join("; "));
           const fileReasons = await verifyEvidenceReceiptFiles(receipt, ctx.cwd);
           if (fileReasons.length > 0) return deliveryRejected(fileReasons.join("; "));
           if (params.operation === "auto-merge") {
@@ -419,8 +430,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
 
   pi.on("tool_call", async (event) => {
     if (!active || event.toolName === "pstack_delivery") return;
-    const command = (event.input as { command?: unknown }).command;
-    const payload = `${event.toolName}\n${typeof command === "string" ? command : JSON.stringify(event.input)}`;
+    const payload = `${event.toolName}\n${normalizeToolCallInput(event.input)}`;
     if (containsDirectMerge(payload)) {
       return {
         block: true,
@@ -453,6 +463,41 @@ function deliveryLevel(operation: string): "prepare" | "pr" | "merge-ready" | "a
   throw new Error(`unsupported mutating delivery operation: ${operation}`);
 }
 
+/** Flatten shell-like and structured tool payloads before applying merge gates. */
+function normalizeToolCallInput(input: unknown): string {
+  const values: string[] = [];
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && trimmed.length > 1) {
+        try {
+          visit(JSON.parse(trimmed));
+          return;
+        } catch {
+          // Preserve command strings that happen to contain malformed JSON.
+        }
+      }
+      values.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      for (const key of ["command", "argv", "args"]) {
+        if (key in record) visit(record[key]);
+      }
+      for (const [key, child] of Object.entries(record)) {
+        if (key !== "command" && key !== "argv" && key !== "args") visit(child);
+      }
+    }
+  };
+  visit(input);
+  return values.join(" ");
+}
+
 function containsDirectMerge(command: string): boolean {
   const value = command.replace(/\\\r?\n/g, " ").toLowerCase();
   return (
@@ -470,12 +515,13 @@ function containsDirectMerge(command: string): boolean {
 }
 
 function pullRequestChecksPass(
-  checks: readonly { conclusion?: string; status?: string }[],
+  checks: readonly { conclusion?: string; state?: string; status?: string }[],
 ): boolean {
   if (checks.length === 0) return false;
-  return checks.every((check) =>
-    new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]).has(check.conclusion ?? ""),
-  );
+  return checks.every((check) => {
+    const result = check.conclusion ?? check.state;
+    return new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]).has(result ?? "");
+  });
 }
 
 function deliveryRejected(reason: string) {

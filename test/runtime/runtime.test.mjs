@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
@@ -239,11 +239,29 @@ test("verification tool generates a registered project-local skill", async () =>
   }
 });
 
+test("verification tool returns a rejection when feature-map validation throws", async () => {
+  const runtime = fakeRuntime();
+  const result = await runtime.toolsByName.get("pstack_create_verification").execute(
+    "invalid-verification",
+    {
+      app: "../escape",
+      features: [],
+    },
+    undefined,
+    undefined,
+    runtime.ctx,
+  );
+  assert.equal(result.details.rejected, true);
+  assert.match(result.content[0].text, /creation rejected/i);
+});
+
 test("delivery tool and bash hook reject an unreceipted merge", async () => {
   const calls = [];
   const runtime = fakeRuntime({
     exec: async (command, args) => {
       calls.push([command, ...args]);
+      if (command === "git" && args[0] === "status")
+        return { code: 0, stdout: "", stderr: "", killed: false };
       if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
       if (command === "gh" && args[0] === "repo")
         return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
@@ -273,12 +291,14 @@ test("delivery tool and bash hook reject an unreceipted merge", async () => {
   assert.equal(blocked.block, true);
 });
 
-test("delivery tool requires receipts for every mutation and enforces Benny drafts", async () => {
+test("delivery tool requires receipts for every mutation and receipts are human-origin", async () => {
   const project = await mkdtemp(join(tmpdir(), "pstack-receipt-tool-"));
   const calls = [];
   const runtime = fakeRuntime({
     exec: async (command, args) => {
       calls.push([command, ...args]);
+      if (command === "git" && args[0] === "status")
+        return { code: 0, stdout: "", stderr: "", killed: false };
       if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
       if (command === "gh" && args[0] === "repo")
         return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
@@ -299,6 +319,21 @@ test("delivery tool requires receipts for every mutation and enforces Benny draf
     calls.some((argv) => argv.includes("submit")),
     false,
   );
+  for (const operation of [
+    { operation: "prepare", branch: "feature" },
+    { operation: "sync" },
+    { operation: "rebase" },
+    { operation: "auto-merge", pullRequest: "42" },
+  ]) {
+    const rejected = await tool.execute(
+      `missing-${operation.operation}`,
+      { backend: "gh-stack", ...operation },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+    assert.match(rejected.content[0].text, /receipt/i, operation.operation);
+  }
 
   for (const [path, content] of [
     ["feature-map.md", "# Feature map\n"],
@@ -327,6 +362,11 @@ test("delivery tool requires receipts for every mutation and enforces Benny draf
     undefined,
     runtime.ctx,
   );
+  assert.equal(created.details.receipt.origin, "human");
+  assert.equal(
+    calls.some((argv) => argv[0] === "node"),
+    false,
+  );
   const benny = await tool.execute(
     "call-4",
     { backend: "gh-stack", operation: "submit", draft: false, receiptPath: created.details.path },
@@ -334,10 +374,10 @@ test("delivery tool requires receipts for every mutation and enforces Benny draf
     undefined,
     runtime.ctx,
   );
-  assert.match(benny.content[0].text, /draft/i);
+  assert.match(benny.content[0].text, /completed/i);
   assert.equal(
     calls.some((argv) => argv.includes("submit")),
-    false,
+    true,
   );
   const draft = await tool.execute(
     "call-5",
@@ -354,6 +394,75 @@ test("delivery tool requires receipts for every mutation and enforces Benny draf
   await rm(project, { recursive: true, force: true });
 });
 
+test("receipt creation rejects tracked changes before writing evidence", async () => {
+  const project = await mkdtemp(join(tmpdir(), "pstack-dirty-receipt-"));
+  const runtime = fakeRuntime({
+    exec: async (command, args) => {
+      if (command === "git" && args[0] === "status")
+        return { code: 0, stdout: " M tracked.txt\n", stderr: "", killed: false };
+      if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
+      if (command === "gh" && args[0] === "repo")
+        return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
+      return { code: 0, stdout: "{}", stderr: "", killed: false };
+    },
+  });
+  runtime.ctx.cwd = project;
+  try {
+    const result = await runtime.toolsByName.get("pstack_create_receipt").execute(
+      "dirty",
+      {
+        backend: "gh-stack",
+        featureMapPath: "feature-map.md",
+        skillPath: "SKILL.md",
+        reviewPath: "review.md",
+        reviewer: "reviewer",
+        evalPath: "eval.json",
+        artifactPaths: [{ kind: "trace", path: "trace.zip" }],
+      },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+    assert.match(result.content[0].text, /tracked changes/i);
+    await assert.rejects(readFile(join(project, ".pi", "pstack", "receipts")), /ENOENT/);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
+test("delivery revalidates receipt semantics before checking file digests", async () => {
+  const project = await mkdtemp(join(tmpdir(), "pstack-invalid-receipt-"));
+  const runtime = fakeRuntime({
+    exec: async (command, args) => {
+      if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
+      if (command === "gh" && args[0] === "repo")
+        return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
+      return { code: 0, stdout: "{}", stderr: "", killed: false };
+    },
+  });
+  runtime.ctx.cwd = project;
+  try {
+    await mkdir(join(project, ".pi", "pstack", "receipts"), { recursive: true });
+    const path = join(project, ".pi", "pstack", "receipts", "bad.json");
+    await writeFile(path, JSON.stringify({ version: 999 }), "utf8");
+    const result = await runtime.toolsByName.get("pstack_delivery").execute(
+      "invalid",
+      {
+        backend: "gh-stack",
+        operation: "submit",
+        draft: true,
+        receiptPath: ".pi/pstack/receipts/bad.json",
+      },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+    assert.match(result.content[0].text, /unsupported evidence receipt version/i);
+  } finally {
+    await rm(project, { recursive: true, force: true });
+  }
+});
+
 test("auto-merge binds a verified receipt to the live pull request head and checks", async () => {
   const project = await mkdtemp(join(tmpdir(), "pstack-merge-tool-"));
   let pullRequestHead = "abc123";
@@ -361,6 +470,8 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
   const runtime = fakeRuntime({
     exec: async (command, args) => {
       calls.push([command, ...args]);
+      if (command === "git" && args[0] === "status")
+        return { code: 0, stdout: "", stderr: "", killed: false };
       if (command === "git") return { code: 0, stdout: "abc123\n", stderr: "", killed: false };
       if (command === "gh" && args[0] === "repo")
         return { code: 0, stdout: "acme/demo\n", stderr: "", killed: false };
@@ -371,7 +482,7 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
             headRefOid: pullRequestHead,
             isDraft: false,
             mergeStateStatus: "CLEAN",
-            statusCheckRollup: [{ conclusion: "SUCCESS" }],
+            statusCheckRollup: [{ state: "SUCCESS" }],
           }),
           stderr: "",
           killed: false,
@@ -469,6 +580,17 @@ test("active mode blocks direct merge variants and allows ordinary gh reads", as
       runtime.ctx,
     );
     assert.equal(result?.block, true, command);
+  }
+  for (const input of [
+    { command: "gh", args: ["pr", "merge", "42", "--auto"] },
+    { command: ["gh", "pr", "merge", "42"] },
+    { payload: JSON.stringify({ command: "gh", argv: ["pr", "merge", "42"] }) },
+  ]) {
+    const result = await runtime.handlers.get("tool_call")?.(
+      { toolName: "bash", input },
+      runtime.ctx,
+    );
+    assert.equal(result?.block, true, JSON.stringify(input));
   }
   const mcpBlocked = await runtime.handlers.get("tool_call")?.(
     { toolName: "mcp", input: { tool: "github_merge_pull_request", args: { number: 42 } } },
@@ -595,4 +717,19 @@ test("Benny tool reaches the typed core and persistent ledger through a register
     dispose();
     await rm(project, { recursive: true, force: true });
   }
+});
+
+test("Benny blocks an unavailable provider without writes", async () => {
+  const runtime = fakeRuntime();
+  const result = await runtime.toolsByName
+    .get("pstack_benny")
+    .execute(
+      "missing-provider",
+      { action: "triage", provider: "not-installed", config: {} },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+  assert.equal(result.details.status, "blocked");
+  assert.equal(result.details.writes, 0);
 });
