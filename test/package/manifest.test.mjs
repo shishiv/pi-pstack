@@ -25,4 +25,6 @@ test("pins the locally proven Pi compatibility floor", async () => {
   assert.equal(manifest.peerDependencies["pi-subagents"], ">=0.54.0");
   assert.equal(manifest.peerDependencies["pi-mcp-adapter"], ">=2.27.0");
   assert.equal(manifest.peerDependencies["@howaboua/pi-ask"], ">=0.0.5");
+  assert.equal(manifest.peerDependencies.typebox, "*");
+  assert.equal(manifest.devDependencies.jiti, "2.7.0");
 });

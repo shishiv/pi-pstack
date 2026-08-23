@@ -74,6 +74,8 @@ test("resource inventory is exactly 44 skills, 22 playbooks, 2 agents, and Benny
   assert.deepEqual(skillDirs, expectedSkillNames);
 
   const playbooks = await filesUnder(join(skillsDir, "poteto-mode", "playbooks"));
+  assert.equal(playbooks.filter((path) => path.endsWith(".md")).length, 23);
+  assert.ok(playbooks.some((path) => path.endsWith("/opening-a-pr.md")));
   assert.equal(
     playbooks.filter((path) => path.endsWith(".md") && !path.endsWith("/opening-a-pr.md")).length,
     22,
@@ -120,12 +122,19 @@ test("active resources use Pi runtime contracts", async () => {
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }
-  assert.match(corpus, /workflowScript/);
-  assert.match(corpus, /runs\.all/);
-  assert.match(corpus, /ask/);
-  assert.match(corpus, /PI_SESSION_FILE/);
-  assert.match(corpus, /gh stack/);
-  assert.match(corpus, /Graphite/);
+  const mode = await readFile(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
+  const how = await readFile(join(skillsDir, "how", "SKILL.md"), "utf8");
+  const recall = await readFile(join(skillsDir, "recall", "SKILL.md"), "utf8");
+  const shipping = await readFile(
+    join(skillsDir, "poteto-mode", "playbooks", "shipping.md"),
+    "utf8",
+  );
+  assert.match(mode, /workflowScript/);
+  assert.match(how, /runs\.all/);
+  assert.match(mode, /\bask\b/);
+  assert.match(recall, /PI_SESSION_FILE/);
+  assert.match(shipping, /gh stack/);
+  assert.match(shipping, /Graphite/);
 });
 
 test("agent frontmatter uses valid Pi roles", async () => {

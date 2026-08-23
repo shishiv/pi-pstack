@@ -24,6 +24,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@types/node": "24.12.4",
+    "jiti": "2.7.0",
     "oxfmt": "0.64.0",
     "oxlint": "1.79.0",
     "pi-mcp-adapter": "2.27.0",
@@ -36,7 +37,8 @@
     "@earendil-works/pi-coding-agent": ">=0.84.2",
     "@howaboua/pi-ask": ">=0.0.5",
     "pi-mcp-adapter": ">=2.27.0",
-    "pi-subagents": ">=0.54.0"
+    "pi-subagents": ">=0.54.0",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
     "pi-mcp-adapter": {
