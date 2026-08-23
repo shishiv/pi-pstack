@@ -50,6 +50,7 @@ test("validation reports missing required fields and duplicate IDs", () => {
   });
   assert.equal(result.valid, false);
   assert.match(result.errors.join("\n"), /kebab-case|duplicates|userGoal|must differ/);
+  assert.equal(verification.validateFeatureMap({ ...fixture, app: "Web-App" }).valid, false);
 });
 
 test("project skill generation is idempotent and rejects path traversal", async () => {
@@ -60,6 +61,7 @@ test("project skill generation is idempotent and rejects path traversal", async 
       featureMap: fixture,
     });
     const before = await readFile(`${first.destination}/SKILL.md`, "utf8");
+    assert.match(before, /^---\nname: verify-web-app\ndescription:/);
     const second = await verification.generateProjectVerificationSkill({
       projectRoot: root,
       featureMap: fixture,
@@ -75,6 +77,15 @@ test("project skill generation is idempotent and rejects path traversal", async 
           featureMap: fixture,
         }),
       /safe|path/,
+    );
+    await assert.rejects(
+      () =>
+        verification.generateVerificationSkill({
+          destination: root,
+          appName: "Web-App",
+          featureMap: fixture,
+        }),
+      /safe|kebab-case/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

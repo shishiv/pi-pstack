@@ -18,7 +18,7 @@ function page() {
 <html lang="en"><head><meta charset="utf-8"><title>Verification fixture</title></head>
 <body><main>
 <h1>Verification fixture</h1>
-<p id="status" data-testid="status" role="status">${label}</p>
+<p id="status" data-testid="status" role="status" aria-label="Application status">${label}</p>
 <p>Count: <output id="count" data-testid="count">${state.count}</output></p>
 <button type="button" data-testid="increment" aria-label="Increment count">Increment</button>
 <button type="button" data-testid="reset" aria-label="Reset count">Reset</button>

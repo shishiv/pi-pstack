@@ -16,7 +16,7 @@ export interface GeneratedVerificationSkill {
 }
 
 function safeLeaf(name: string): string {
-  if (!/^[a-z0-9][a-z0-9-]*$/i.test(name) || name.includes(".."))
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(name) || name.includes(".."))
     throw new Error("app name must be a safe kebab-case path segment");
   return name;
 }
@@ -51,7 +51,7 @@ export async function generateVerificationSkill(
     ["feature-map.md", renderFeatureMapMarkdown(options.featureMap)],
     [
       "SKILL.md",
-      `# Verify ${appName}\n\nUse the feature map below to verify the application with Playwright. Preserve the user's goal, collect every required artifact, and distinguish the expected state from the broken-state discriminator.\n\nRead \`feature-map.md\` before acting.\n`,
+      `---\nname: ${skillName}\ndescription: Verify ${appName} through its project feature map and Playwright harness. Use after changing user-facing behavior or reproducing a reported defect.\n---\n\n# Verify ${appName}\n\nUse the feature map below to verify the application with Playwright. Preserve the user's goal, collect every required artifact, and distinguish the expected state from the broken-state discriminator.\n\nRead \`feature-map.md\` before acting.\n`,
     ],
   ]);
   let changed = false;

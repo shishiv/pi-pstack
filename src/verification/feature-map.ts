@@ -234,7 +234,7 @@ export function validateFeatureMap(map: unknown): FeatureMapValidation {
     return { valid: false, errors: ["feature map must be an object"] };
   const candidate = map as Partial<FeatureMap>;
   if (candidate.version !== 1) errors.push("version must be 1");
-  if (!text(candidate.app) || !/^[a-z0-9][a-z0-9-]*$/i.test(candidate.app!))
+  if (!text(candidate.app) || !/^[a-z0-9][a-z0-9-]*$/.test(candidate.app!))
     errors.push("app must be a kebab-case name");
   if (!Array.isArray(candidate.features) || candidate.features.length === 0)
     errors.push("features must be a non-empty array");
@@ -246,7 +246,7 @@ export function validateFeatureMap(map: unknown): FeatureMapValidation {
       continue;
     }
     const item = feature as Partial<FeatureEntry>;
-    if (!text(item.id) || !/^[a-z0-9][a-z0-9-]*$/i.test(item.id!))
+    if (!text(item.id) || !/^[a-z0-9][a-z0-9-]*$/.test(item.id!))
       errors.push(`${prefix}.id must be kebab-case`);
     if (ids.has(item.id!)) errors.push(`${prefix}.id duplicates ${item.id}`);
     ids.add(item.id!);
