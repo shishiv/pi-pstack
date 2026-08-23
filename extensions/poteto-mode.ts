@@ -625,6 +625,9 @@ function normalizeToolCallInput(input: unknown): string {
 function containsDirectMerge(command: string): boolean {
   const value = command.replace(/\\\r?\n/g, " ").toLowerCase();
   return (
+    /\bgit\s+(?:(?:(?:-c|--git-dir|--work-tree)\s+\S+|--(?:git-dir|work-tree)=\S+)\s+)*merge\b/.test(
+      value,
+    ) ||
     /\bgit\s+(?:(?:(?:-c|--git-dir|--work-tree)\s+\S+|--(?:git-dir|work-tree)=\S+)\s+)*push\b/.test(
       value,
     ) ||

@@ -748,6 +748,8 @@ test("active mode blocks direct merge variants and allows ordinary gh reads", as
   const runtime = fakeRuntime();
   await runtime.commandsByName.get("poteto-mode")?.("on", runtime.ctx);
   const commands = [
+    "git merge feature",
+    "git -C repo merge feature",
     "git push origin main",
     "git -C repo push origin HEAD:main",
     "cd repo\ngh pr merge 42 --auto",
