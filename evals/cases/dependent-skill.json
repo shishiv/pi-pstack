@@ -1,0 +1,10 @@
+{
+  "id": "dependent-skill-selection",
+  "targetSkill": "show-me-your-work",
+  "fixture": { "kind": "deterministic-note", "version": 1 },
+  "input": { "request": "Show the evidence." },
+  "requiredAssertions": [{ "kind": "required-text", "text": "Evidence:" }],
+  "prohibitedBehaviors": [],
+  "dependencySkills": ["how"],
+  "evidenceExpectations": { "required": ["evidence note"] }
+}

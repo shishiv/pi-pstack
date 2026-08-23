@@ -1,0 +1,84 @@
+schemaVersion: 1
+
+automations:
+  triageName: "benny-triage"
+  reproduceName: "benny-reproduce"
+
+slack:
+  sourceChannelId: "SOURCE_CHANNEL_ID"
+  operationsChannelId: ""
+  triageIdentityUserId: "TRIAGE_IDENTITY_USER_ID"
+  readAction: "configured-slack-read-action"
+  threadPostAction: "configured-slack-thread-post-action"
+  fileDownloadAction: "configured-slack-file-download-action"
+  operationsEditAction: "configured-slack-edit-action"
+  preferPiActions: true
+  optionalBotTokenEnv: "BENNY_SLACK_BOT_TOKEN"
+  allowSourceRootPosts: false
+  allowWorkerSlackWrites: false
+
+repository:
+  url: "https://github.com/example-org/example-repo"
+  defaultBranch: "main"
+  pullRequestAction: "configured-draft-pull-request-action"
+  pullRequestUrlFormat: "https://github.com/{owner}/{repo}/pull/{number}"
+  draftOnly: true
+
+tracker:
+  type: "linear"
+  adapter: "issue-tracker-adapter-placeholder"
+  team: "team-placeholder"
+  project: "project-placeholder"
+  labels:
+    bug: "bug-label-placeholder"
+    performance: "performance-label-placeholder"
+    intake: "intake-label-placeholder"
+    needsRepro: "needs-repro-label-placeholder"
+  status: "intake-status-placeholder"
+  sourceLinkTitle: "Slack report"
+  requireCompensationAction: true
+
+routing:
+  mapPath: ".pi/pstack/benny-config/routing.md"
+  ownerPingsDefault: false
+  allowFeatureOwnerPing: false
+  allowConfirmedRegressionAuthorPing: false
+
+control:
+  adapter: "control-target-app"
+  featureMapPath: ".pi/pstack/benny-config/feature-map.md"
+  environment: "safe-test-environment-placeholder"
+  artifactDirectory: "/tmp/benny-artifacts"
+  artifactRetentionHours: 24
+
+verdictMarkers:
+  bug: "[benny:bug]"
+  performance: "[benny:performance]"
+  other: "[benny:other]"
+  trackerAttribute: "tracker"
+
+statusEmoji:
+  seen: "👀"
+  reproducing: "🔎"
+  reproduced: "✅"
+  couldNotReproduce: "⚪"
+  blocked: "⛔"
+  fixing: "🛠️"
+  fixFailed: "❌"
+  pullRequestOpened: "🔗"
+
+budgets:
+  pollSeconds: 45
+  verdictWaitMinutes: 45
+  triageFollowUpMinutes: 10
+  triageTotalMinutes: 30
+  reproMinutes: 60
+  rejectionWindowMinutes: 10
+  fixMinutes: 90
+  operationsFollowUpMinutes: 45
+
+models:
+  triage: "choose-an-available-public-model-slug"
+  reproduce: "choose-an-available-public-model-slug"
+  code: "choose-an-available-public-model-slug"
+  mediaReview: "choose-an-available-public-model-slug"

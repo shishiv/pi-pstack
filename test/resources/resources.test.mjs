@@ -1,0 +1,153 @@
+import { readdir, readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
+
+const root = resolve(import.meta.dirname, "../..");
+const skillsDir = join(root, "skills");
+const agentsDir = join(root, "agents");
+const bennyDir = join(root, "automations", "benny");
+const expectedSkillNames = [
+  "architect",
+  "arena",
+  "automate-me",
+  "blast-radius",
+  "bro",
+  "create-verification-skill",
+  "figure-it-out",
+  "how",
+  "interrogate",
+  "maintain-verification-skill",
+  "no-comments",
+  "poteto-mode",
+  "principle-boundary-discipline",
+  "principle-build-the-lever",
+  "principle-encode-lessons-in-structure",
+  "principle-exhaust-the-design-space",
+  "principle-experience-first",
+  "principle-fix-root-causes",
+  "principle-foundational-thinking",
+  "principle-guard-the-context-window",
+  "principle-laziness-protocol",
+  "principle-make-operations-idempotent",
+  "principle-migrate-callers-then-delete-legacy-apis",
+  "principle-minimize-reader-load",
+  "principle-model-the-domain",
+  "principle-never-block-on-the-human",
+  "principle-outcome-oriented-execution",
+  "principle-prove-it-works",
+  "principle-redesign-from-first-principles",
+  "principle-separate-before-serializing-shared-state",
+  "principle-sequence-verifiable-units",
+  "principle-subtract-before-you-add",
+  "principle-type-system-discipline",
+  "recall",
+  "reflect",
+  "setup-pstack",
+  "show-me-your-work",
+  "swarm",
+  "tdd",
+  "teach",
+  "technical-writing",
+  "typescript-best-practices",
+  "unslop",
+  "why",
+].toSorted();
+
+async function filesUnder(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.name === "node_modules") continue;
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await filesUnder(path)));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
+
+test("resource inventory is exactly 44 skills, 22 playbooks, 3 agents, and Benny", async () => {
+  const skillDirs = (await readdir(skillsDir, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .toSorted();
+  assert.deepEqual(skillDirs, expectedSkillNames);
+
+  const playbooks = await filesUnder(join(skillsDir, "poteto-mode", "playbooks"));
+  assert.equal(playbooks.filter((path) => path.endsWith(".md")).length, 23);
+  assert.ok(playbooks.some((path) => path.endsWith("/opening-a-pr.md")));
+  assert.equal(
+    playbooks.filter((path) => path.endsWith(".md") && !path.endsWith("/opening-a-pr.md")).length,
+    22,
+  );
+
+  const agents = (await readdir(agentsDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => entry.name)
+    .toSorted();
+  assert.deepEqual(agents, ["benny-coordinator.md", "comment-sicko.md", "poteto-agent.md"]);
+  const bennySkills = (await filesUnder(join(bennyDir, "skills"))).filter((path) =>
+    path.endsWith("SKILL.md"),
+  );
+  assert.equal(bennySkills.length, 3);
+  const workflows = (await readdir(bennyDir)).filter((name) => name.endsWith(".workflow.json"));
+  assert.deepEqual(workflows.toSorted(), ["reproduce.workflow.json", "triage.workflow.json"]);
+});
+
+test("Pi loads every skill without diagnostics", () => {
+  const result = loadSkillsFromDir({ dir: skillsDir, source: "pi-pstack" });
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.skills.map((skill) => skill.name).toSorted(), expectedSkillNames);
+});
+
+test("active resources use Pi runtime contracts", async () => {
+  const paths = [
+    ...(await filesUnder(skillsDir)),
+    ...(await filesUnder(agentsDir)),
+    ...(await filesUnder(bennyDir)),
+  ];
+  const text = await Promise.all(paths.map((path) => readFile(path, "utf8")));
+  const corpus = text.join("\n");
+  for (const [token, pattern] of [
+    ["AskQuestion", /AskQuestion/],
+    ["run_in_background", /run_in_background/],
+    ["subagent_type", /subagent_type/],
+    ["generalPurpose", /generalPurpose/],
+    [".cursor", /\.cursor/],
+    ["Cursor runtime", /\bCursor\b/],
+    ["/loop", /\/loop\b/],
+    ["symbolic model profile", /profile:(?:fast|reasoning|instruction|review)/],
+    ["unsupported subagents.profiles", /subagents\.profiles/],
+    ["unsupported read-write acceptance role", /acceptanceRole:\s*read-write/],
+  ]) {
+    assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
+  }
+  const mode = await readFile(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
+  const how = await readFile(join(skillsDir, "how", "SKILL.md"), "utf8");
+  const recall = await readFile(join(skillsDir, "recall", "SKILL.md"), "utf8");
+  const shipping = await readFile(
+    join(skillsDir, "poteto-mode", "playbooks", "shipping.md"),
+    "utf8",
+  );
+  assert.match(mode, /workflowScript/);
+  assert.match(how, /runs\.all/);
+  assert.match(mode, /\bask\b/);
+  assert.match(recall, /PI_SESSION_FILE/);
+  assert.match(shipping, /gh stack/);
+  assert.match(shipping, /Graphite/);
+});
+
+test("agent frontmatter uses valid Pi roles", async () => {
+  const comment = await readFile(join(agentsDir, "comment-sicko.md"), "utf8");
+  const benny = await readFile(join(agentsDir, "benny-coordinator.md"), "utf8");
+  const poteto = await readFile(join(agentsDir, "poteto-agent.md"), "utf8");
+  assert.match(comment, /name: comment-sicko/);
+  assert.match(comment, /acceptanceRole: read-only/);
+  assert.match(comment, /never edit files/i);
+  assert.match(benny, /tools: read, grep, find, ls, pstack_benny/);
+  assert.doesNotMatch(benny, /pstack_delivery/);
+  assert.match(poteto, /async: true/);
+  assert.match(poteto, /inheritProjectContext: true/);
+  assert.match(poteto, /inheritSkills: true/);
+});

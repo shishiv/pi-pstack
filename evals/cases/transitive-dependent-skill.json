@@ -1,0 +1,10 @@
+{
+  "id": "transitive-dependent-skill-selection",
+  "targetSkill": "reflect",
+  "fixture": { "kind": "deterministic-note", "version": 1 },
+  "input": { "request": "Review the evidence." },
+  "requiredAssertions": [{ "kind": "required-text", "text": "Evidence:" }],
+  "prohibitedBehaviors": [],
+  "dependencySkills": ["show-me-your-work"],
+  "evidenceExpectations": { "required": ["evidence note"] }
+}

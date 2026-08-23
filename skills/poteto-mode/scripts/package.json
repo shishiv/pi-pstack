@@ -1,0 +1,16 @@
+{
+  "name": "@pi-pstack/poteto-mode-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test orch watch-pr",
+    "typecheck": "tsc --project tsconfig.json --noEmit --strict"
+  },
+  "dependencies": {
+    "commander": "14.0.0"
+  },
+  "devDependencies": {
+    "bun-types": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}

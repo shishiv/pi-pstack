@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.pi/pstack/
+.unlazy/
+/GATES.md
+/artifacts/
+/eval-results/

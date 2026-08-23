@@ -1,0 +1,9 @@
+{
+  "text": "Next action: inspect the supplied fixture before changing anything.",
+  "structured": { "decision": "proceed" },
+  "files": { "evidence.md": "observed: fixture is deterministic" },
+  "actions": ["inspect", "record"],
+  "exit": { "outcome": "success", "code": 0 },
+  "provider": "hidden-provider",
+  "model": "hidden-model"
+}

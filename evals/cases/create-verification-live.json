@@ -1,0 +1,23 @@
+{
+  "id": "create-verification-live",
+  "targetSkill": "create-verification-skill",
+  "fixture": {
+    "featureMap": "fixtures/web-app/feature-map.md",
+    "surface": "fixtures/web-app/page.mjs"
+  },
+  "input": {
+    "request": "Explain the concrete verification recipe for increment-count without editing files."
+  },
+  "requiredAssertions": [
+    { "kind": "required-text", "text": "increment-count" },
+    { "kind": "required-text", "text": "Application status" },
+    { "kind": "required-text", "text": "screenshot" },
+    { "kind": "required-text", "text": "trace" },
+    { "kind": "required-text", "text": "cleanup" }
+  ],
+  "prohibitedBehaviors": ["localhost:", "screen coordinates"],
+  "dependencySkills": ["maintain-verification-skill"],
+  "evidenceExpectations": {
+    "required": ["accessible locator", "expected versus broken state", "persistent artifacts"]
+  }
+}

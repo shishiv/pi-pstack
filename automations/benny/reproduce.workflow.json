@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "benny-reproduce",
+  "every": "1m",
+  "action": "reproduce",
+  "tool": "pstack_benny",
+  "polling": "schedule-wake",
+  "overlap": "skip",
+  "catchUp": "latest",
+  "draftOnly": true
+}

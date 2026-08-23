@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  layer-verification:
+    name: layer-verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify the common foundation contract
+        run: npm run verify:foundation
+      - name: Run complete deterministic checks when available
+        shell: bash
+        run: |
+          if node -e 'const s=require("./package.json").scripts||{};process.exit(s["verify:deterministic"]?0:1)'; then
+            npm run verify:deterministic
+          fi
+          if node -e 'const s=require("./package.json").scripts||{};process.exit(s["verify:tools"]?0:1)'; then
+            npm run verify:tools
+          fi
