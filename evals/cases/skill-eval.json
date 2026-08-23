@@ -1,0 +1,19 @@
+{
+  "id": "skill-eval-known-good",
+  "targetSkill": "how",
+  "fixture": { "kind": "deterministic-note", "version": 1 },
+  "input": { "request": "Explain the next verifiable action." },
+  "requiredAssertions": [
+    { "kind": "required-text", "text": "Next action:" },
+    { "kind": "structured-field", "path": "decision", "equals": "proceed" },
+    { "kind": "file", "path": "evidence.md", "contains": "observed" },
+    { "kind": "action", "action": "inspect" },
+    { "kind": "exit-outcome", "outcome": "success", "code": 0 }
+  ],
+  "prohibitedBehaviors": [
+    "I cannot verify this",
+    { "kind": "forbidden-action", "action": "deploy" }
+  ],
+  "dependencySkills": [],
+  "evidenceExpectations": { "required": ["observable next action", "evidence file"] }
+}

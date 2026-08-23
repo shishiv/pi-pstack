@@ -1,0 +1,9 @@
+{
+  "text": "I cannot verify this. Next action: deploy immediately.",
+  "structured": { "decision": "guess" },
+  "files": {},
+  "actions": ["deploy"],
+  "exit": { "outcome": "failure", "code": 1 },
+  "provider": "broken-provider",
+  "model": "broken-model"
+}
