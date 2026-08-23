@@ -64,7 +64,7 @@ The Benny files are read directly from `.pi/pstack/benny/`. Do not add that dire
 
 Tell the user that `.pi/settings.json`, `.pi/pstack/benny/`, and any referenced secret-free configuration must be committed before either automation is enabled. Do not commit them unless the user asks.
 
-Once this check passes, live automation prompts may read the committed operational files by their stable repository-relative paths. They must not embed a plugin cache path or copy the file contents.
+Once this check passes, live automation prompts may read the committed operational files by their stable repository-relative paths. They must not embed a package cache path or copy the file contents.
 
 ## 2. Adapt the configuration
 
@@ -177,7 +177,7 @@ For each automation:
 1. Read the matching copied prompt template as secondary internal source material.
 2. Turn `FOR_AGENTS.md`, the finished Benny configuration, and the template intent into a complete natural-language request.
 3. Tell the live prompt to read and follow its exact committed operational file under `.pi/pstack/benny/`.
-4. Use the stable repository-relative path, not a plugin source or cache path. Do not copy the operational file contents into the live prompt.
+4. Use the stable repository-relative path, not a package source or cache path. Do not copy the operational file contents into the live prompt.
 5. Validate the matching `*.workflow.json` definition.
 6. Resolve Slack, repository, tracker, and control integrations through capability preflight.
 7. Confirm that the copied pack and referenced configuration files are committed in the repository where the schedule will run.
