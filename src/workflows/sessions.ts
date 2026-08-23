@@ -14,7 +14,7 @@ function projectNames(projectDirectory: string): Set<string> {
   const absolute = resolve(projectDirectory);
   const base = basename(absolute);
   const slug = absolute.replace(/^[/\\]+/, "").replace(/[\\/]/g, "-");
-  return new Set([base, slug]);
+  return new Set([base, slug, `--${slug}--`]);
 }
 
 function within(parent: string, candidate: string): boolean {
@@ -26,12 +26,10 @@ function within(parent: string, candidate: string): boolean {
 
 function belongsToProject(candidate: string, projectDirectory: string): boolean {
   if (within(projectDirectory, candidate)) return true;
-  const slug = resolve(projectDirectory)
-    .replace(/^[/\\]+/, "")
-    .replace(/[\\/]/g, "-");
+  const names = projectNames(projectDirectory);
   return resolve(candidate)
     .split(/[\\/]/)
-    .some((part) => part === slug || part.replace(/\.jsonl$/i, "") === slug);
+    .some((part) => names.has(part) || names.has(part.replace(/\.jsonl$/i, "")));
 }
 
 function sessionIdMatches(candidate: string, sessionId: string | undefined): boolean {

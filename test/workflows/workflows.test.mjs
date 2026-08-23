@@ -101,6 +101,22 @@ test("session discovery stays inside the active project and parses only supplied
   );
 });
 
+test("session discovery recognizes Pi's wrapped project directory slug", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-session-store-"));
+  const project = join(root, "workspace", "app");
+  const slug = project.replace(/^[/\\]+/, "").replace(/[\\/]/g, "-");
+  const projectSessions = join(root, `--${slug}--`);
+  await mkdir(project, { recursive: true });
+  await mkdir(projectSessions);
+  const active = join(projectSessions, "active.jsonl");
+  await writeFile(active, '{"type":"session"}\n');
+
+  assert.deepEqual(
+    sessions.discoverSessionFiles({ piSessionFile: active, projectDirectory: project }),
+    [active],
+  );
+});
+
 test("long-run plans choose a native wake mechanism instead of polling", () => {
   assert.deepEqual(wake.planLongRunWake({ childRunId: "run-1" }), {
     mechanism: "async-child-wait",
