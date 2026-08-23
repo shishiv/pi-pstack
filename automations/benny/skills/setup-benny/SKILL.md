@@ -56,7 +56,7 @@ Reload the target project or start a fresh agent rooted there. Verify that these
 - `principle-fix-root-causes`
 - `principle-prove-it-works`
 
-Do not count a skill loaded from the current session or a user-scoped plugin. The check must show that a fresh agent in the target repository receives pstack through project settings.
+Do not count a skill loaded from the current session or a user-scoped package. The check must show that a fresh agent in the target repository receives pstack through project settings.
 
 If project-scoped package installation is unavailable or any shared dependency does not resolve, stop and explain the failure.
 
@@ -203,7 +203,7 @@ After the triage schedule is verified, give the reproduce schedule this complete
 - Trigger on the same new top-level reports in the configured source Slack channel.
 - Use the configured repository and default branch.
 - Read the source thread and reply only inside it.
-- Include pull request creation and the configured tracker, control-adapter, and feature-map requirements. Paraphrase mapped user paths and states unless `automate` confirms an eligible committed file in the same repository.
+- Include pull request creation and the configured tracker, control-adapter, and feature-map requirements. Paraphrase mapped user paths and states unless setup confirms an eligible committed file in the same repository.
 - Wait for a trusted triage marker before acting.
 - Reproduce the exact symptom twice through the mapped real UI and capture evidence.
 - Verify an existing fix without authoring over it.
