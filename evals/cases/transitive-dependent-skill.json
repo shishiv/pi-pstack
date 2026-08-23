@@ -1,6 +1,6 @@
 {
   "id": "transitive-dependent-skill-selection",
-  "targetSkill": "reflect",
+  "targetSkill": "pstack-reflect",
   "fixture": { "kind": "deterministic-note", "version": 1 },
   "input": { "request": "Review the evidence." },
   "requiredAssertions": [{ "kind": "required-text", "text": "Evidence:" }],

@@ -97,7 +97,7 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 
 ## Subagents
 
-**Use `agent: "poteto-agent"` for any subagent you spawn inside a playbook step** (code-writing delegates, ad-hoc helpers). `/skill:poteto-mode` and `poteto-agent` route through the same wrapper. Routed workflow skills (`how`, `why`, `interrogate`, `reflect`, `swarm`) set their own `agent` for diverse-model review; respect what the skill prescribes, don't override to `poteto-agent`.
+**Use `agent: "poteto-agent"` for any subagent you spawn inside a playbook step** (code-writing delegates, ad-hoc helpers). `/skill:poteto-mode` and `poteto-agent` route through the same wrapper. Routed workflow skills (`how`, `why`, `interrogate`, `pstack-reflect`, `swarm`) set their own `agent` for diverse-model review; respect what the skill prescribes, don't override to `poteto-agent`.
 
 **Defaults for every `subagent` call.** Use `async: true` for background work, pass file pointers instead of inlining large context, and choose the Pi agent by job shape. Use `worker` for code, `scout` for local exploration, `researcher` for public research, `reviewer` for independent review, and `oracle` for judgment and synthesis. Omit `model` so the selected agent profile applies. Pass a provider-qualified model only when `/subagents-models` proves it is available and model diversity is part of the task. Run capability preflight before children that need extension tools such as MCP or browser access.
 
