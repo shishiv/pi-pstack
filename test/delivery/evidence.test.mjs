@@ -27,6 +27,8 @@ async function fixture({
   repo = "acme/demo",
   head = "head-1",
   cleanup = "passed",
+  bothPass = false,
+  judgeWinner,
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), "pstack-evidence-"));
   const skill = "skill contents\n";
@@ -47,9 +49,9 @@ async function fixture({
     evidenceExpectations: { required: [] },
   };
   const candidateA = currentPass ? "OK\n" : "not okay\n";
-  const candidateB = currentPass ? "not okay\n" : "OK\n";
+  const candidateB = bothPass || !currentPass ? "OK\n" : "not okay\n";
   const judge = {
-    winner: currentPass ? "Candidate A" : "Candidate B",
+    winner: judgeWinner ?? (currentPass ? "Candidate A" : "Candidate B"),
     rationale: "blind comparison",
   };
   await writeFile(join(root, "eval-case.json"), JSON.stringify(evalCase));
@@ -72,17 +74,7 @@ async function fixture({
   const skillEvidence = { path: "SKILL.md", sha256: sha(skill) };
   const gradeA = evals.gradeCandidate(evalCase, { text: candidateA });
   const gradeB = evals.gradeCandidate(evalCase, { text: candidateB });
-  const aggregate = currentPass
-    ? {
-        accepted: true,
-        winner: "Candidate A",
-        reason: "Candidate A is the only candidate passing hard assertions.",
-      }
-    : {
-        accepted: true,
-        winner: "Candidate B",
-        reason: "Candidate B is the only candidate passing hard assertions.",
-      };
+  const aggregate = evals.aggregateGrades({ "Candidate A": gradeA, "Candidate B": gradeB }, judge);
   await writeFile(
     join(root, "eval.json"),
     JSON.stringify({
@@ -91,25 +83,32 @@ async function fixture({
       repoIdentity: repo,
       headSha: head,
       caseId: evalCase.id,
+      baselineId: "approved-baseline-1",
       evalCase: { path: "eval-case.json", sha256: sha(JSON.stringify(evalCase)) },
       targetSkill: skillEvidence,
       candidates: [
         {
           label: "Candidate A",
           current: true,
+          baseline: false,
           output: { path: "candidate-a.txt", sha256: sha(candidateA) },
           grade: gradeA,
         },
         {
           label: "Candidate B",
           current: false,
+          baseline: true,
           output: { path: "candidate-b.txt", sha256: sha(candidateB) },
           grade: gradeB,
         },
       ],
       judgeEvidence: { path: "judge.json", sha256: sha(JSON.stringify(judge)) },
       judge,
-      aggregate,
+      aggregate: {
+        accepted: aggregate.accepted,
+        winner: aggregate.winner,
+        reason: aggregate.reason,
+      },
     }),
   );
   await writeFile(
@@ -165,6 +164,7 @@ test("creation rejects an unverified review, wrong identity, current failure, an
     ["wrong head", { head: "wrong" }, /HEAD/],
     ["wrong repository", { repo: "other/repo" }, /repository/],
     ["failed current", { currentPass: false }, /current Candidate A/],
+    ["judge prefers baseline", { bothPass: true, judgeWinner: "Candidate B" }, /regressed/],
     ["failed cleanup", { cleanup: "failed" }, /cleanup/],
   ]) {
     const { root } = await fixture(options);
@@ -219,10 +219,16 @@ test("creation rejects missing declared artifacts and paths outside root", async
 test("evidence paths reject symlinks that resolve outside the repository", async () => {
   const { root } = await fixture();
   const outside = await mkdtemp(join(tmpdir(), "pstack-outside-evidence-"));
+  const linkedRoot = join(outside, "repo-link");
   try {
     await writeFile(join(outside, "secret.txt"), "outside");
     await symlink(join(outside, "secret.txt"), join(root, "linked.txt"));
     await assert.rejects(delivery.fileEvidence(root, "linked.txt"), /resolves outside repository/);
+    await symlink(root, linkedRoot, "dir");
+    assert.equal(
+      (await delivery.fileEvidence(linkedRoot, "feature-map.md")).path,
+      "feature-map.md",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });

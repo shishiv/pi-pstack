@@ -74,11 +74,24 @@ export interface StructuredEvalEvidence {
   repoIdentity: string;
   headSha: string;
   caseId: string;
+  baselineId: string;
   evalCase: FileEvidence;
   targetSkill: FileEvidence;
   candidates: readonly [
-    { label: "Candidate A"; current: true; output: FileEvidence; grade: unknown },
-    { label: "Candidate B"; current: false; output: FileEvidence; grade: unknown },
+    {
+      label: "Candidate A";
+      current: true;
+      baseline: false;
+      output: FileEvidence;
+      grade: unknown;
+    },
+    {
+      label: "Candidate B";
+      current: false;
+      baseline: true;
+      output: FileEvidence;
+      grade: unknown;
+    },
   ];
   judgeEvidence: FileEvidence;
   judge: {

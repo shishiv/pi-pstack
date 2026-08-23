@@ -22,7 +22,7 @@ Projetos reais devem iniciar o servidor com portless e registrar a URL nomeada n
 
 Cada caso declara assertions obrigatórias, comportamentos proibidos, dependências e evidência esperada. Assertions determinísticas têm precedência sobre o judge. O judge recebe apenas rótulos como Candidate A e Candidate B.
 
-Não existe taxa mínima inventada. O primeiro conjunto aceito forma o baseline. Uma mudança de skill deve manter os hard gates e não regredir o baseline aprovado.
+Não existe taxa mínima inventada. O primeiro conjunto aceito forma o baseline. Em uma comparação de mudança, Candidate A é a versão atual e Candidate B é o baseline aprovado identificado no artifact. A versão atual deve manter os hard gates e o judge cego não pode preferir o baseline.
 
 ## Receipt de entrega
 

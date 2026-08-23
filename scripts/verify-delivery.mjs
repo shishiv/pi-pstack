@@ -11,6 +11,7 @@ if (stack.trunk !== "main" || !Array.isArray(stack.branches) || stack.branches.l
 }
 const submitHelp = run("gh", ["stack", "submit", "--help"]).stdout;
 assert.match(submitHelp, /--auto/);
+assert.match(submitHelp, /--auto[\s\S]+auto-generated PR titles/);
 assert.match(submitHelp, /new PRs are created as drafts unless you pass\s+--open/);
 const addHelp = run("gh", ["stack", "add", "--help"]).stdout;
 assert.match(addHelp, /Usage:\s+gh stack add \[branch\]/);

@@ -79,18 +79,21 @@ async function writeRuntimeEvidence(project, repoIdentity = "acme/demo", headSha
       repoIdentity,
       headSha,
       caseId: evalCase.id,
+      baselineId: "approved-baseline-1",
       evalCase: { path: "eval-case.json", sha256: digest(evalCaseText) },
       targetSkill: { path: "SKILL.md", sha256: digest(skill) },
       candidates: [
         {
           label: "Candidate A",
           current: true,
+          baseline: false,
           output: { path: "candidate-a.txt", sha256: digest(candidateA) },
           grade: gradeA,
         },
         {
           label: "Candidate B",
           current: false,
+          baseline: true,
           output: { path: "candidate-b.txt", sha256: digest(candidateB) },
           grade: gradeB,
         },
@@ -558,10 +561,12 @@ test("delivery revalidates receipt semantics before checking file digests", asyn
 test("auto-merge binds a verified receipt to the live pull request head and checks", async () => {
   const project = await mkdtemp(join(tmpdir(), "pstack-merge-tool-"));
   let pullRequestHead = "abc123";
+  let checkRollup = [{ state: "SUCCESS" }];
   let stackBranches = [
     {
       name: "feature",
       head: "abc123",
+      base: "000000",
       isMerged: false,
       pr: { number: 42, state: "OPEN" },
     },
@@ -589,7 +594,7 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
             headRefOid: pullRequestHead,
             isDraft: false,
             mergeStateStatus: "CLEAN",
-            statusCheckRollup: [{ state: "SUCCESS" }],
+            statusCheckRollup: checkRollup,
           }),
           stderr: "",
           killed: false,
@@ -621,18 +626,38 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
       true,
     );
 
-    stackBranches = [
+    checkRollup = [{ status: "IN_PROGRESS", conclusion: "" }];
+    const mergesAfterSuccess = calls.filter((argv) => argv.includes("merge")).length;
+    const pending = await runtime.toolsByName.get("pstack_delivery").execute(
+      "merge-pending",
       {
-        name: "foundation",
-        head: "def456",
-        isMerged: false,
-        pr: { number: 41, state: "OPEN" },
+        backend: "gh-stack",
+        operation: "auto-merge",
+        pullRequest: "42",
+        receiptPath: receipt.details.path,
       },
+      undefined,
+      undefined,
+      runtime.ctx,
+    );
+    assert.match(pending.content[0].text, /checks are not green/i);
+    assert.equal(calls.filter((argv) => argv.includes("merge")).length, mergesAfterSuccess);
+    checkRollup = [{ state: "SUCCESS" }];
+
+    stackBranches = [
       {
         name: "feature",
         head: "abc123",
+        base: "def456",
         isMerged: false,
         pr: { number: 42, state: "OPEN" },
+      },
+      {
+        name: "foundation",
+        head: "def456",
+        base: "000000",
+        isMerged: false,
+        pr: { number: 41, state: "OPEN" },
       },
     ];
     const incompleteStack = await runtime.toolsByName.get("pstack_delivery").execute(
@@ -653,6 +678,7 @@ test("auto-merge binds a verified receipt to the live pull request head and chec
       {
         name: "feature",
         head: "abc123",
+        base: "000000",
         isMerged: false,
         pr: { number: 42, state: "OPEN" },
       },

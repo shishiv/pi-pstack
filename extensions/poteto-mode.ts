@@ -520,18 +520,33 @@ function stackPullRequestsThrough(
     if (!branch || typeof branch !== "object") return [];
     const item = branch as {
       head?: unknown;
+      base?: unknown;
       isMerged?: unknown;
       pr?: { number?: unknown; state?: unknown };
     };
     if (item.isMerged === true || item.pr?.state === "MERGED") return [];
     if (typeof item.head !== "string" || !/^[a-f0-9]{6,64}$/i.test(item.head)) return [];
+    if (typeof item.base !== "string" || !/^[a-f0-9]{6,64}$/i.test(item.base)) return [];
     const number = item.pr?.number;
     if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) return [];
-    return [{ pullRequest: String(number), headSha: item.head }];
+    return [{ pullRequest: String(number), headSha: item.head, baseSha: item.base }];
   });
-  const target = entries.findIndex((entry) => entry.pullRequest === targetPullRequest);
+  const heads = new Map(entries.map((entry) => [entry.headSha, entry]));
+  const roots = entries.filter((entry) => !heads.has(entry.baseSha));
+  if (roots.length !== 1) throw new Error("gh stack branch parentage is not a single chain");
+  const ordered = [] as typeof entries;
+  let current: (typeof entries)[number] | undefined = roots[0];
+  while (current) {
+    ordered.push(current);
+    const children = entries.filter((entry) => entry.baseSha === current!.headSha);
+    if (children.length > 1) throw new Error("gh stack branch parentage contains a fork");
+    current = children[0];
+  }
+  if (ordered.length !== entries.length)
+    throw new Error("gh stack branch parentage is disconnected or cyclic");
+  const target = ordered.findIndex((entry) => entry.pullRequest === targetPullRequest);
   if (target < 0) throw new Error(`target PR #${targetPullRequest} is not in the active stack`);
-  return entries.slice(0, target + 1);
+  return ordered.slice(0, target + 1);
 }
 
 async function verifyPullRequestState(

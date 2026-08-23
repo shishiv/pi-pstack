@@ -63,7 +63,7 @@ async function sha256(path: string): Promise<string> {
 export async function fileEvidence(root: string, path: string): Promise<FileEvidence> {
   const absolute = evidencePath(root, path);
   return {
-    path: relative(resolve(root), absolute).replaceAll("\\", "/"),
+    path: relative(realpathSync(resolve(root)), absolute).replaceAll("\\", "/"),
     sha256: await sha256(absolute),
   };
 }
@@ -119,7 +119,7 @@ export function parseEvalEvidence(value: unknown): StructuredEvalEvidence {
     throw new Error("invalid structured eval evidence");
   if (!nonEmpty(value.repoIdentity) || !nonEmpty(value.headSha))
     throw new Error("eval evidence is missing repository identity or HEAD");
-  if (!nonEmpty(value.caseId) || !fileEvidenceShape(value.evalCase))
+  if (!nonEmpty(value.caseId) || !nonEmpty(value.baselineId) || !fileEvidenceShape(value.evalCase))
     throw new Error("eval evidence has invalid eval case");
   if (!fileEvidenceShape(value.targetSkill))
     throw new Error("eval evidence has invalid target skill");
@@ -133,6 +133,8 @@ export function parseEvalEvidence(value: unknown): StructuredEvalEvidence {
     candidates[1].label !== "Candidate B" ||
     candidates[0].current !== true ||
     candidates[1].current !== false ||
+    candidates[0].baseline !== false ||
+    candidates[1].baseline !== true ||
     !fileEvidenceShape(candidates[0].output) ||
     !fileEvidenceShape(candidates[1].output) ||
     !("grade" in candidates[0]) ||
@@ -241,13 +243,24 @@ export interface EvidenceReceiptFilesInput {
   };
 }
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+function canonicalJson(value: unknown, depth = 0, ancestors = new Set<object>()): string {
+  if (depth > 64) throw new Error("JSON evidence exceeds maximum nesting depth");
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) throw new Error("JSON evidence contains a cycle");
+    ancestors.add(value);
+    const result = `[${value.map((item) => canonicalJson(item, depth + 1, ancestors)).join(",")}]`;
+    ancestors.delete(value);
+    return result;
+  }
   if (object(value)) {
-    return `{${Object.keys(value)
+    if (ancestors.has(value)) throw new Error("JSON evidence contains a cycle");
+    ancestors.add(value);
+    const result = `{${Object.keys(value)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key], depth + 1, ancestors)}`)
       .join(",")}}`;
+    ancestors.delete(value);
+    return result;
   }
   return JSON.stringify(value);
 }
@@ -312,6 +325,8 @@ async function validateEvalSemantics(
     throw new Error("eval aggregate result does not match aggregateGrades");
   if (!grades["Candidate A"]?.hardPassed)
     throw new Error("current Candidate A does not hard-pass the eval");
+  if (aggregate.winner !== "Candidate A")
+    throw new Error("current Candidate A regressed against the approved baseline");
 }
 
 /** Create a receipt by reading only the declared, exact-head evidence chain. */

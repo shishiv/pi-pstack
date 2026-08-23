@@ -62,8 +62,10 @@ assert.ok(skillPath, "--skill is required to bind eval evidence to the target sk
 const skillAbsolute = resolve(skillPath);
 const repoIdentity = options.repo ?? process.env.REPO_IDENTITY;
 const headSha = options.head ?? process.env.HEAD_SHA;
+const baselineId = options["baseline-id"] ?? process.env.BASELINE_ID;
 assert.ok(repoIdentity, "--repo is required to bind eval evidence to a repository");
 assert.ok(headSha, "--head is required to bind eval evidence to an exact HEAD");
+assert.ok(baselineId, "--baseline-id is required to identify the approved baseline");
 const targetRoot = options.root ? resolve(options.root) : process.cwd();
 function inside(path) {
   const value = relative(targetRoot, resolve(path));
@@ -92,18 +94,21 @@ const evidence = {
   repoIdentity,
   headSha,
   caseId: evalCase.id,
+  baselineId,
   evalCase: evidenceFor(casePath),
   targetSkill: evidenceFor(skillAbsolute),
   candidates: [
     {
       label: "Candidate A",
       current: true,
+      baseline: false,
       output: evidenceFor(candidatePaths[0]),
       grade: grades[0].grade,
     },
     {
       label: "Candidate B",
       current: false,
+      baseline: true,
       output: evidenceFor(candidatePaths[1]),
       grade: grades[1].grade,
     },
@@ -118,6 +123,11 @@ const evidence = {
 };
 assert.equal(evidence.aggregate.accepted, true, "eval aggregate rejected both candidates");
 assert.equal(evidence.candidates[0].grade.hardPassed, true, "current Candidate A must hard-pass");
+assert.equal(
+  evidence.aggregate.winner,
+  "Candidate A",
+  "current Candidate A regressed against the approved baseline",
+);
 const output = `${JSON.stringify(evidence, null, 2)}\n`;
 if (options.out) await writeFile(resolve(options.out), output, "utf8");
 else process.stdout.write(output);

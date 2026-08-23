@@ -36,6 +36,8 @@ test("live eval script binds exact-head candidate and judge evidence", async () 
       "acme/demo",
       "--head",
       "abc123",
+      "--baseline-id",
+      "approved-baseline-1",
       "--root",
       root,
       "--out",
@@ -45,6 +47,7 @@ test("live eval script binds exact-head candidate and judge evidence", async () 
     const evidence = JSON.parse(await readFile(join(directory, "eval-evidence.json"), "utf8"));
     assert.equal(evidence.headSha, "abc123");
     assert.equal(evidence.candidates[0].current, true);
+    assert.equal(evidence.candidates[1].baseline, true);
     assert.equal(evidence.candidates[0].grade.hardPassed, true);
     assert.equal(evidence.judgeEvidence.path, path("judge.json"));
 
@@ -61,6 +64,8 @@ test("live eval script binds exact-head candidate and judge evidence", async () 
       "acme/demo",
       "--head",
       "abc123",
+      "--baseline-id",
+      "approved-baseline-1",
       "--root",
       root,
       "--out",
@@ -68,6 +73,33 @@ test("live eval script binds exact-head candidate and judge evidence", async () 
     ]);
     assert.notEqual(rejected.status, 0);
     assert.match(rejected.stderr, /current Candidate A must hard-pass/);
+
+    await writeFile(join(directory, "current.md"), good);
+    await writeFile(
+      join(directory, "judge.json"),
+      JSON.stringify({ winner: "Candidate B", rationale: "baseline is better" }),
+    );
+    const regression = run("grade-live-eval.mjs", [
+      "evals/cases/create-verification-live.json",
+      path("current.md"),
+      path("comparison.md"),
+      "--judge",
+      path("judge.json"),
+      "--skill",
+      "skills/create-verification-skill/SKILL.md",
+      "--repo",
+      "acme/demo",
+      "--head",
+      "abc123",
+      "--baseline-id",
+      "approved-baseline-1",
+      "--root",
+      root,
+      "--out",
+      path("regression.json"),
+    ]);
+    assert.notEqual(regression.status, 0);
+    assert.match(regression.stderr, /regressed against the approved baseline/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
