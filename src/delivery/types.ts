@@ -69,9 +69,10 @@ export interface EvidenceReceipt {
 export type StackOperation =
   | { kind: "inspect" }
   | { kind: "prepare"; branch: string }
-  | { kind: "pr"; title: string; body: string; draft: boolean }
-  | { kind: "merge-ready"; pullRequest: string }
-  | { kind: "auto-merge"; pullRequest: string };
+  | { kind: "submit"; draft: boolean }
+  | { kind: "sync" }
+  | { kind: "rebase" }
+  | { kind: "auto-merge"; pullRequest?: string };
 
 export interface StackSnapshot {
   backend: StackBackendName;

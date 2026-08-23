@@ -40,16 +40,60 @@ for (const [label, Backend, expectedCommand] of [
     const runner = runnerFor(label);
     const backend = new Backend(runner);
     const snapshot = await backend.inspect();
-    assert.equal(snapshot.headSha, "abc123");
-    assert.equal(snapshot.repoIdentity, "acme/demo");
-    const result = await backend.execute({ kind: "pr", title: "Ship", body: "Proof", draft: true });
+    assert.equal(snapshot.backend, label === "gh stack" ? "gh-stack" : "graphite");
+    const result = await backend.execute({ kind: "submit", draft: true });
     assert.equal(result.accepted, true);
     assert.equal(result.pullRequest, "42");
     assert.equal(runner.calls[0][0], expectedCommand);
-    assert.ok(runner.calls[1].includes("--draft"));
     assert.ok(runner.calls.every((argv) => Array.isArray(argv)));
   });
 }
+
+test("gh stack adapter emits only documented non-interactive commands", async () => {
+  const runner = runnerFor("gh stack");
+  const backend = new delivery.GhStackBackend(runner);
+  await backend.inspect();
+  await backend.execute({ kind: "prepare", branch: "feature" });
+  await backend.execute({ kind: "submit", draft: false });
+  await backend.execute({ kind: "sync" });
+  await backend.execute({ kind: "rebase" });
+  await backend.execute({ kind: "auto-merge", pullRequest: "42" });
+  assert.deepEqual(runner.calls, [
+    ["gh", "stack", "view", "--json"],
+    ["gh", "stack", "add", "feature"],
+    ["gh", "stack", "submit", "--auto", "--open"],
+    ["gh", "stack", "sync"],
+    ["gh", "stack", "rebase"],
+    ["gh", "stack", "merge", "42", "--yes"],
+  ]);
+});
+
+test("Graphite adapter emits documented non-interactive commands", async () => {
+  const runner = runnerFor("Graphite");
+  const backend = new delivery.GraphiteBackend(runner);
+  await backend.inspect();
+  await backend.execute({ kind: "prepare", branch: "feature" });
+  await backend.execute({ kind: "submit", draft: true });
+  await backend.execute({ kind: "sync" });
+  await backend.execute({ kind: "rebase" });
+  await backend.execute({ kind: "auto-merge" });
+  assert.deepEqual(runner.calls, [
+    ["gt", "log", "short", "--stack", "--reverse"],
+    ["gt", "create", "feature", "--no-interactive"],
+    ["gt", "submit", "--draft", "--no-edit", "--no-interactive"],
+    ["gt", "sync", "--no-interactive"],
+    ["gt", "restack", "--no-interactive"],
+    [
+      "gt",
+      "submit",
+      "--merge-when-ready",
+      "--always",
+      "--update-only",
+      "--no-edit",
+      "--no-interactive",
+    ],
+  ]);
+});
 
 test("Graphite is capability-gated while gh stack remains the default", () => {
   const runner = runnerFor("both");

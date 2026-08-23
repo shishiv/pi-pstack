@@ -93,25 +93,23 @@ export class GhStackBackend extends CliStackBackend {
   protected argv(operation: StackOperation): readonly string[] {
     switch (operation.kind) {
       case "inspect":
-        return ["gh", "stack", "status", "--json"];
+        return ["gh", "stack", "view", "--json"];
       case "prepare":
-        return ["gh", "stack", "prepare", operation.branch, "--json"];
-      case "pr":
+        return ["gh", "stack", "add", operation.branch];
+      case "submit":
+        return ["gh", "stack", "submit", "--auto", ...(operation.draft ? [] : ["--open"])];
+      case "sync":
+        return ["gh", "stack", "sync"];
+      case "rebase":
+        return ["gh", "stack", "rebase"];
+      case "auto-merge":
         return [
           "gh",
           "stack",
-          "submit",
-          "--title",
-          operation.title,
-          "--body",
-          operation.body,
-          ...(operation.draft ? ["--draft"] : []),
-          "--json",
+          "merge",
+          ...(operation.pullRequest ? [operation.pullRequest] : []),
+          "--yes",
         ];
-      case "merge-ready":
-        return ["gh", "stack", "merge-ready", operation.pullRequest, "--json"];
-      case "auto-merge":
-        return ["gh", "stack", "merge", operation.pullRequest, "--auto", "--json"];
     }
   }
 }
@@ -125,24 +123,32 @@ export class GraphiteBackend extends CliStackBackend {
   protected argv(operation: StackOperation): readonly string[] {
     switch (operation.kind) {
       case "inspect":
-        return ["gt", "log", "--json"];
+        return ["gt", "log", "short", "--stack", "--reverse"];
       case "prepare":
-        return ["gt", "create", operation.branch, "--json"];
-      case "pr":
+        return ["gt", "create", operation.branch, "--no-interactive"];
+      case "submit":
         return [
           "gt",
           "submit",
-          "--title",
-          operation.title,
-          "--body",
-          operation.body,
           ...(operation.draft ? ["--draft"] : []),
-          "--json",
+          ...(operation.draft ? [] : ["--publish"]),
+          "--no-edit",
+          "--no-interactive",
         ];
-      case "merge-ready":
-        return ["gt", "submit", operation.pullRequest, "--merge-when-ready", "--json"];
+      case "sync":
+        return ["gt", "sync", "--no-interactive"];
+      case "rebase":
+        return ["gt", "restack", "--no-interactive"];
       case "auto-merge":
-        return ["gt", "merge", operation.pullRequest, "--auto", "--json"];
+        return [
+          "gt",
+          "submit",
+          "--merge-when-ready",
+          "--always",
+          "--update-only",
+          "--no-edit",
+          "--no-interactive",
+        ];
     }
   }
 }
