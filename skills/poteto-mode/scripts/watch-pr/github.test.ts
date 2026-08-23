@@ -304,7 +304,7 @@ describe("context and stack discovery", () => {
     expect(ordered.map((item) => Number(item.number))).toEqual([41, 42, 43]);
   });
 
-  it("rejects cyclic and duplicate-head stack topology", () => {
+  it("rejects cyclic and connected duplicate-head stack topology", () => {
     expect(() =>
       orderStack(context, [
         { number: context.number, headRefName: "feature", baseRefName: "parent" },
@@ -315,7 +315,17 @@ describe("context and stack discovery", () => {
       orderStack(context, [
         { number: context.number, headRefName: "feature", baseRefName: "main" },
         { number: parsePrNumber(43), headRefName: "feature", baseRefName: "other" },
+        { number: parsePrNumber(44), headRefName: "child", baseRefName: "feature" },
       ])
-    ).toThrow(/duplicate head/);
+    ).toThrow(/ambiguous parent/);
+  });
+
+  it("ignores an unrelated duplicate branch name outside the traversed component", () => {
+    const ordered = orderStack(context, [
+      { number: context.number, headRefName: "feature", baseRefName: "main" },
+      { number: parsePrNumber(43), headRefName: "patch-1", baseRefName: "other" },
+      { number: parsePrNumber(44), headRefName: "patch-1", baseRefName: "elsewhere" },
+    ]);
+    expect(ordered.map((item) => Number(item.number))).toEqual([42]);
   });
 });

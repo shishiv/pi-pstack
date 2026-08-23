@@ -214,6 +214,25 @@ describe("main", () => {
     });
   });
 
+  it("renders invalid discovered stack topology as an exit-7 verdict", async () => {
+    const reader = fakeReader({
+      openPullRequests: [
+        { number: parsePrNumber(1), headRefName: "feature", baseRefName: "parent" },
+        { number: parsePrNumber(2), headRefName: "parent", baseRefName: "feature" },
+      ],
+    });
+    const harness = testRuntime(reader);
+    const code = await main(
+      ["--owner", "owner", "--repo", "repo", "--pr", "1", "--stack", "--status-only"],
+      harness.runtime
+    );
+    expect(code).toBe(7);
+    expect(JSON.parse(harness.stdout[0])).toMatchObject({
+      kind: "BLOCKER",
+      blocker: { kind: "status-query", failure: { kind: "invalid-stack", retryable: false } },
+    });
+  });
+
   it("shows help without touching the reader", async () => {
     const reader = fakeReader();
     const harness = testRuntime(reader);

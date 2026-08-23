@@ -652,23 +652,27 @@ export function orderStack(
   open: readonly T.OpenPullRequest[]
 ): T.NonEmpty<T.PrContext> {
   const byNumber = new Map(open.map((pr) => [pr.number, pr]));
-  const byHead = new Map(open.map((pr) => [pr.headRefName, pr]));
-  if (byHead.size !== open.length)
-    throw new Error("cannot order stack with duplicate head branches");
-  const children = new Map<string, T.OpenPullRequest[]>();
-  for (const pr of open)
-    children.set(pr.baseRefName, [...(children.get(pr.baseRefName) ?? []), pr]);
-  for (const values of children.values())
-    values.sort((a, b) => a.number - b.number);
   const start = byNumber.get(context.number);
   if (start === undefined) return [context];
+  const byHead = new Map<string, T.OpenPullRequest[]>();
+  const children = new Map<string, T.OpenPullRequest[]>();
+  for (const pr of open) {
+    byHead.set(pr.headRefName, [...(byHead.get(pr.headRefName) ?? []), pr]);
+    children.set(pr.baseRefName, [...(children.get(pr.baseRefName) ?? []), pr]);
+  }
+  for (const values of children.values())
+    values.sort((a, b) => a.number - b.number);
+  const invalidStack = (detail: string): never => {
+    throw new WatcherQueryError({ kind: "invalid-stack", retryable: false, detail });
+  };
   const down: T.OpenPullRequest[] = [];
   const downSeen = new Set<T.PrNumber>([start.number]);
   let current = start;
-  while (byHead.has(current.baseRefName)) {
-    const parent = byHead.get(current.baseRefName);
-    if (parent === undefined) break;
-    if (downSeen.has(parent.number)) throw new Error("cannot order cyclic pull request stack");
+  while ((byHead.get(current.baseRefName)?.length ?? 0) > 0) {
+    const parents = byHead.get(current.baseRefName) ?? [];
+    if (parents.length !== 1) invalidStack("cannot order stack with an ambiguous parent branch");
+    const parent = parents[0]!;
+    if (downSeen.has(parent.number)) invalidStack("cannot order cyclic pull request stack");
     downSeen.add(parent.number);
     down.push(parent);
     current = parent;
@@ -679,7 +683,10 @@ export function orderStack(
   ]);
   const up: T.OpenPullRequest[] = [];
   const visit = (parent: T.OpenPullRequest): void => {
-    for (const child of children.get(parent.headRefName) ?? []) {
+    const childRows = children.get(parent.headRefName) ?? [];
+    if (childRows.length > 0 && (byHead.get(parent.headRefName)?.length ?? 0) > 1)
+      invalidStack("cannot order stack with an ambiguous parent branch");
+    for (const child of childRows) {
       if (seen.has(child.number)) continue;
       seen.add(child.number);
       up.push(child);
