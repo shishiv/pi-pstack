@@ -51,8 +51,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
   }
 
   function restore(ctx: ExtensionContext): void {
-    // This closure is intentionally reset from the active branch on every
-    // session lifecycle event. It prevents state leaking across sessions.
     active = branchState(ctx);
   }
 
@@ -68,8 +66,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     restore(ctx);
-    // Probe all host capability surfaces during startup without changing
-    // settings or failing print/JSON sessions. A task invocation fails closed.
     preflight(ctx);
   });
 
@@ -569,7 +565,6 @@ async function verifyPullRequestState(
   return undefined;
 }
 
-/** Flatten shell-like and structured tool payloads before applying merge gates. */
 function normalizeToolCallInput(input: unknown): string {
   const values: string[] = [];
   const seen = new WeakSet<object>();

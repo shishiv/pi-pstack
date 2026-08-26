@@ -1,4 +1,3 @@
-/** The only delivery state kept by this package is evidence for one head SHA. */
 export const AUTONOMY_LEVELS = ["verify", "prepare", "pr", "merge-ready", "auto-merge"] as const;
 
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
