@@ -2,7 +2,7 @@
 
 **You own the stack, never the landing. Build and verify the queue with full
 autonomy, then hand the operator one linear reviewed stack.** `gh stack` is
-the default named backend; Graphite is optional. For "autopilot-stack", "stack
+the delivery backend. For "autopilot-stack", "stack
 them, don't ship", "build the stack, I'll land it". The sibling of
 **Autopilot-full**. The owner loop and verification gate are the same; only
 the terminal differs. Nothing auto-ships from this skill.

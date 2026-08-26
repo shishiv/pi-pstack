@@ -51,8 +51,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
   }
 
   function restore(ctx: ExtensionContext): void {
-    // This closure is intentionally reset from the active branch on every
-    // session lifecycle event. It prevents state leaking across sessions.
     active = branchState(ctx);
   }
 
@@ -68,8 +66,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     restore(ctx);
-    // Probe all host capability surfaces during startup without changing
-    // settings or failing print/JSON sessions. A task invocation fails closed.
     preflight(ctx);
   });
 
@@ -245,7 +241,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     description:
       "Hash local verification, review, and eval artifacts into a receipt for the current repository HEAD.",
     parameters: Type.Object({
-      backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
+      backend: Type.Literal("gh-stack"),
       featureMapPath: Type.String({ minLength: 1 }),
       skillPath: Type.String({ minLength: 1 }),
       reviewPath: Type.String({ minLength: 1 }),
@@ -303,9 +299,9 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     name: "pstack_delivery",
     label: "Run gated pstack delivery",
     description:
-      "Inspect a stack or run a receipt-gated gh-stack or Graphite mutation. Auto-merge also verifies the live PR head and checks.",
+      "Inspect a stack or run a receipt-gated gh-stack mutation. Auto-merge also verifies the live PR head and checks.",
     parameters: Type.Object({
-      backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
+      backend: Type.Literal("gh-stack"),
       operation: Type.Union([
         Type.Literal("inspect"),
         Type.Literal("prepare"),
@@ -344,8 +340,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
             paths.map((path) => loadEvidenceReceipt(path, ctx.cwd)),
           );
           if (params.operation === "auto-merge") {
-            if (params.backend !== "gh-stack")
-              return deliveryRejected("Graphite auto-merge lacks stack-wide receipt verification");
             if (!params.pullRequest)
               return deliveryRejected("auto-merge requires a pull request number");
             const stackResult = await pi.exec("gh", ["stack", "view", "--json"], {
@@ -368,7 +362,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
                 root: ctx.cwd,
                 repoIdentity: repository.stdout.trim(),
                 headSha: entry.headSha,
-                backend: params.backend as StackBackendName,
+                backend: params.backend,
                 level,
               });
               if (rejection) return deliveryRejected(rejection);
@@ -391,7 +385,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
               root: ctx.cwd,
               repoIdentity: repository.stdout.trim(),
               headSha: currentHead.stdout.trim(),
-              backend: params.backend as StackBackendName,
+              backend: params.backend,
               level,
             });
             if (rejection) return deliveryRejected(rejection);
@@ -399,7 +393,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
               receipt,
               repoIdentity: repository.stdout.trim(),
               currentHeadSha: currentHead.stdout.trim(),
-              backend: params.backend as StackBackendName,
+              backend: params.backend,
               level,
             });
             if (authorization.draftOnly && params.operation === "submit" && params.draft === false)
@@ -414,18 +408,8 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
             return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr };
           },
         };
-        const availableCommands = ["gh"];
-        if (params.backend === "graphite") {
-          const gt = await pi.exec("gt", ["--version"], { cwd: ctx.cwd, signal });
-          if (gt.code === 0) availableCommands.push("gt");
-        }
-        const backends = createDeliveryBackends({
-          runner,
-          availableCommands,
-        });
-        const backend = params.backend === "graphite" ? backends.graphite : backends.ghStack;
-        if (!backend)
-          return deliveryRejected("Graphite is unavailable; install and authenticate gt first");
+        const backends = createDeliveryBackends({ runner });
+        const backend = backends.ghStack;
         const operation = deliveryOperation(params);
         const result = await backend.execute(operation);
         return {
@@ -581,7 +565,6 @@ async function verifyPullRequestState(
   return undefined;
 }
 
-/** Flatten shell-like and structured tool payloads before applying merge gates. */
 function normalizeToolCallInput(input: unknown): string {
   const values: string[] = [];
   const seen = new WeakSet<object>();
@@ -692,6 +675,7 @@ function deliveryOperation(params: {
     case "rebase":
       return { kind: "rebase" };
     case "auto-merge":
+      if (!params.pullRequest) throw new Error("auto-merge requires pull request");
       return { kind: "auto-merge", pullRequest: params.pullRequest };
     default:
       throw new Error(`unsupported delivery operation: ${params.operation}`);

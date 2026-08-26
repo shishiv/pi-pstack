@@ -5,7 +5,27 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const delivery = await jiti.import("../../src/delivery/index.ts");
 
-function runnerFor(backend) {
+const twoPrStack = {
+  trunk: "main",
+  branches: [
+    {
+      name: "base-feature",
+      head: "111111",
+      base: "000000",
+      isMerged: false,
+      pr: { number: 41, state: "OPEN" },
+    },
+    {
+      name: "feature",
+      head: "abc123",
+      base: "111111",
+      isMerged: false,
+      pr: { number: 42, state: "OPEN" },
+    },
+  ],
+};
+
+function runnerForStack(payload, exitCode = 0) {
   const calls = [];
   return {
     calls,
@@ -13,29 +33,8 @@ function runnerFor(backend) {
       calls.push([...argv]);
       if (argv[0] === "gh" && argv.includes("view")) {
         return {
-          exitCode: 0,
-          stdout: JSON.stringify({
-            trunk: "main",
-            currentBranch: "feature",
-            branches: [
-              {
-                name: "feature",
-                head: "abc123",
-                pr: { number: 42, url: "https://github.com/acme/demo/pull/42" },
-              },
-            ],
-          }),
-          stderr: "",
-        };
-      }
-      if (argv.includes("log")) {
-        return {
-          exitCode: 0,
-          stdout: JSON.stringify({
-            repoIdentity: "acme/demo",
-            headSha: "abc123",
-            pullRequest: "42",
-          }),
+          exitCode,
+          stdout: typeof payload === "string" ? payload : JSON.stringify(payload),
           stderr: "",
         };
       }
@@ -45,35 +44,110 @@ function runnerFor(backend) {
         stderr: "",
       };
     },
-    backend,
   };
 }
 
-for (const [label, Backend, expectedCommand] of [
-  ["gh stack", delivery.GhStackBackend, "gh"],
-  ["Graphite", delivery.GraphiteBackend, "gt"],
-]) {
-  test(`${label} adapter translates argv and parses fixture output`, async () => {
-    const runner = runnerFor(label);
-    const backend = new Backend(runner);
+test("gh stack inspect returns proven parent-first members for a two-PR chain", async () => {
+  const runner = runnerForStack(twoPrStack);
+  const backend = new delivery.GhStackBackend(runner);
+  const snapshot = await backend.inspect();
+  assert.equal(snapshot.kind, "proven");
+  assert.equal(snapshot.backend, "gh-stack");
+  assert.deepEqual(
+    snapshot.members.map((member) => ({
+      pullRequest: member.pullRequest,
+      headSha: member.headSha,
+      baseSha: member.baseSha,
+    })),
+    [
+      { pullRequest: "41", headSha: "111111", baseSha: "000000" },
+      { pullRequest: "42", headSha: "abc123", baseSha: "111111" },
+    ],
+  );
+  const prefix = delivery.membersThrough(snapshot.members, "42");
+  assert.deepEqual(prefix, snapshot.members);
+  assert.deepEqual(
+    delivery.membersThrough(snapshot.members, "41")?.map((member) => member.pullRequest),
+    ["41"],
+  );
+  assert.equal(delivery.membersThrough(snapshot.members, "99"), undefined);
+});
+
+test("gh stack inspect is unproven for invalid membership topologies", async () => {
+  const cases = [
+    [
+      "fork",
+      {
+        branches: [
+          { head: "aaa111", base: "000000", pr: { number: 1, state: "OPEN" } },
+          { head: "bbb222", base: "000000", pr: { number: 2, state: "OPEN" } },
+        ],
+      },
+    ],
+    [
+      "cycle",
+      {
+        branches: [
+          { head: "aaa111", base: "bbb222", pr: { number: 1, state: "OPEN" } },
+          { head: "bbb222", base: "aaa111", pr: { number: 2, state: "OPEN" } },
+        ],
+      },
+    ],
+    [
+      "duplicate head",
+      {
+        branches: [
+          { head: "aaa111", base: "000000", pr: { number: 1, state: "OPEN" } },
+          { head: "aaa111", base: "111111", pr: { number: 2, state: "OPEN" } },
+        ],
+      },
+    ],
+    [
+      "missing base",
+      {
+        branches: [{ head: "aaa111", pr: { number: 1, state: "OPEN" } }],
+      },
+    ],
+    ["exit code 1 with valid JSON", twoPrStack, 1],
+    ["empty stdout", "", 0],
+    ["malformed stdout", "not-json", 0],
+    [
+      "all merged",
+      {
+        branches: [
+          {
+            head: "aaa111",
+            base: "000000",
+            isMerged: true,
+            pr: { number: 1, state: "MERGED" },
+          },
+        ],
+      },
+    ],
+  ];
+  for (const [label, payload, exitCode = 0] of cases) {
+    const backend = new delivery.GhStackBackend(runnerForStack(payload, exitCode));
     const snapshot = await backend.inspect();
-    assert.equal(snapshot.backend, label === "gh stack" ? "gh-stack" : "graphite");
-    if (label === "gh stack") {
-      assert.equal(snapshot.headSha, "abc123");
-      assert.equal(snapshot.pullRequest, "https://github.com/acme/demo/pull/42");
-    }
-    const result = await backend.execute({ kind: "submit", draft: true });
-    assert.equal(result.accepted, true);
-    assert.equal(result.pullRequest, "42");
-    assert.equal(runner.calls[0][0], expectedCommand);
-    assert.ok(runner.calls.every((argv) => Array.isArray(argv)));
-  });
-}
+    assert.equal(snapshot.kind, "unproven", label);
+    assert.equal(snapshot.backend, "gh-stack");
+  }
+});
+
+test("membersThrough returns undefined for missing and malformed targets without throwing", () => {
+  const members = [
+    { pullRequest: "41", headSha: "111111", baseSha: "000000" },
+    { pullRequest: "42", headSha: "abc123", baseSha: "111111" },
+  ];
+  const proven = delivery.membersThrough(members, "99");
+  assert.equal(proven, undefined);
+  assert.doesNotThrow(() => delivery.membersThrough(members, "--admin"));
+  assert.equal(delivery.membersThrough(members, "--admin"), undefined);
+});
 
 test("gh stack adapter emits only documented non-interactive commands", async () => {
-  const runner = runnerFor("gh stack");
+  const runner = runnerForStack(twoPrStack);
   const backend = new delivery.GhStackBackend(runner);
-  await backend.inspect();
+  await backend.execute({ kind: "inspect" });
   await backend.execute({ kind: "prepare", branch: "feature" });
   await backend.execute({ kind: "submit", draft: false });
   await backend.execute({ kind: "sync" });
@@ -89,45 +163,15 @@ test("gh stack adapter emits only documented non-interactive commands", async ()
   ]);
 });
 
-test("Graphite adapter emits documented non-interactive commands", async () => {
-  const runner = runnerFor("Graphite");
-  const backend = new delivery.GraphiteBackend(runner);
-  await backend.inspect();
-  await backend.execute({ kind: "prepare", branch: "feature" });
-  await backend.execute({ kind: "submit", draft: true });
-  await backend.execute({ kind: "sync" });
-  await backend.execute({ kind: "rebase" });
-  await backend.execute({ kind: "auto-merge" });
-  assert.deepEqual(runner.calls, [
-    ["gt", "log", "short", "--stack", "--reverse"],
-    ["gt", "create", "feature", "--no-interactive"],
-    ["gt", "submit", "--draft", "--no-edit", "--no-interactive"],
-    ["gt", "sync", "--no-interactive"],
-    ["gt", "restack", "--no-interactive"],
-    [
-      "gt",
-      "submit",
-      "--merge-when-ready",
-      "--always",
-      "--update-only",
-      "--no-edit",
-      "--no-interactive",
-    ],
-  ]);
-});
-
-test("Graphite is capability-gated while gh stack remains the default", () => {
-  const runner = runnerFor("both");
-  const withoutGt = delivery.createDeliveryBackends({ runner, availableCommands: ["gh"] });
-  assert.ok(withoutGt.ghStack);
-  assert.equal(withoutGt.graphite, undefined);
-  assert.equal(delivery.isGraphiteAvailable(["gh", { name: "other" }]), false);
-  const withGt = delivery.createDeliveryBackends({ runner, availableCommands: ["gh", "gt"] });
-  assert.ok(withGt.graphite);
+test("createDeliveryBackends exposes gh stack only", () => {
+  const runner = runnerForStack(twoPrStack);
+  const backends = delivery.createDeliveryBackends({ runner });
+  assert.ok(backends.ghStack);
+  assert.equal("graphite" in backends, false);
 });
 
 test("stack adapters reject flag-shaped branch and pull request operands", async () => {
-  const backend = new delivery.GhStackBackend(runnerFor("gh stack"));
+  const backend = new delivery.GhStackBackend(runnerForStack(twoPrStack));
   await assert.rejects(
     backend.execute({ kind: "prepare", branch: "--help" }),
     /unsafe branch operand/,
@@ -177,7 +221,7 @@ function receipt(overrides = {}) {
   });
 }
 
-test("complete receipt authorizes only the selected backend action", () => {
+test("complete receipt authorizes gh-stack auto-merge", () => {
   const allowed = delivery.authorizeDelivery({
     receipt: receipt(),
     currentHeadSha: "abc123",
@@ -188,15 +232,11 @@ test("complete receipt authorizes only the selected backend action", () => {
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.backend, "gh-stack");
   assert.equal(allowed.draftOnly, false);
-  const wrongBackend = delivery.authorizeDelivery({
-    receipt: receipt(),
-    currentHeadSha: "abc123",
-    backend: "graphite",
-    level: "auto-merge",
-    projectReadiness: "ready",
-  });
-  assert.equal(wrongBackend.allowed, false);
-  assert.match(wrongBackend.reasons.join(" "), /backend/i);
+});
+
+test("validateEvidenceReceipt rejects non-gh-stack backend values", () => {
+  const reasons = delivery.validateEvidenceReceipt(receipt({ backend: "graphite" }));
+  assert.match(reasons.join(" "), /backend/i);
 });
 
 test("negative controls fail closed for every delivery gate", () => {

@@ -38,8 +38,7 @@ export function validateEvidenceReceipt(receipt: unknown): string[] {
   }
   if (!validFileEvidence(value.featureMap)) reasons.push("invalid feature map evidence");
   if (!validFileEvidence(value.skill)) reasons.push("invalid skill evidence");
-  if (value.backend !== "gh-stack" && value.backend !== "graphite")
-    reasons.push("missing evidence: backend");
+  if (value.backend !== "gh-stack") reasons.push("missing evidence: backend");
 
   const checks = value.deterministicChecks;
   if (
@@ -130,8 +129,6 @@ export function authorizeDelivery(request: DeliveryAuthorizationRequest): Delive
     reasons.push("insufficient project readiness");
 
   const origin = request.origin ?? receipt?.origin;
-  // The shipped receipt tool emits human origin only. The Benny branch remains
-  // defense-in-depth for any future coordinator-issued receipt mechanism.
   const draftOnly = origin === "benny";
   if (origin === "benny" && (level === "merge-ready" || level === "auto-merge"))
     reasons.push("Benny origin is draft-only");

@@ -4,17 +4,15 @@
 
 This is the half after `playbooks/babysit.md`. Babysit makes a stack mergeable.
 Shipping decides what is actually safe to merge and hands a verified receipt to
-the selected delivery adapter. `gh stack` is the default backend; Graphite is
-an optional named backend. These resources do not implement backend state.
+the selected delivery adapter. `gh stack` is the delivery backend. These resources do not implement backend state.
 Green is not safe, and the gap between those two words is where this playbook
 lives.
 
 1. **Verify every PR independently before arming anything.** One subagent per PR, not batched, each a managed-worktree subagent, each exercising the real surface through the available browser, CLI, desktop, or mobile verification skill against parent versus head. Each returns `PASS`, `PASS+NOTES` or `FAIL` and posts that verdict on its own PR so the record outlives the chat. Safe means a verdict from an agent that did not write the code. CI green is not a verdict, and an approving bot review is not a verdict.
 2. **Land only the contiguous verified run rooted at the bottom.** Walk up from the lowest unmerged PR and stop at the first one without a passing verdict, where both `PASS` and `PASS+NOTES` pass. A verified PR sitting above an unverified one is not landable, because merging it would pull the gap in underneath it. Report the ceiling as a PR number and say what breaks the chain.
 3. **Re-check that the verdicts still describe the code.** A restack rewrites every SHA above it and silently invalidates every verdict without touching a single check. Compare `git patch-id` at the verdict SHA against the current head before trusting an older verdict, and re-verify anything that actually drifted. Twenty-one verdicts went stale this way in one run with no signal at all.
-4. **Hand the receipt to the delivery adapter.** Use the default `gh stack`
-   adapter unless the operator explicitly selected the named Graphite adapter.
-   Do not invent or mutate stack state in a skill; the later
+4. **Hand the receipt to the delivery adapter.** Use the `gh stack`
+   adapter. Do not invent or mutate stack state in a skill; the later
    `src/delivery` adapter owns submission, merge-when-ready, and exact-head
    checks.
 5. **Never enable GitHub auto-merge on a stack directly.** Only the selected
