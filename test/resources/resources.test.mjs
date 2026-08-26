@@ -122,6 +122,7 @@ test("active resources use Pi runtime contracts", async () => {
     ["unsupported read-write acceptance role", /acceptanceRole:\s*read-write/],
     ["Comment Sicko spawn", /agent: "Comment Sicko"/],
     ["doubled subagent", /subagent subagent/],
+    ["create-skill", /create-skill/],
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }
