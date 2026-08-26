@@ -13,6 +13,32 @@ Evoluir o pi-pstack para usar memória durável do pbrain sem fundir os dois pro
 - Há sobreposição conceitual: princípios do pi-pstack também aparecem no starter vault do pbrain. Carregar os dois indiscriminadamente desperdiça contexto e cria duas fontes de verdade.
 - O pbrain já injeta contexto via `before_agent_start`; o poteto-mode também altera o prompt nesse evento. A integração precisa provar composição independente da ordem de carregamento.
 
+## Delta source-first para T1/T2
+
+A revisão de escopo foi feita contra três fontes concretas:
+
+- `cursor/plugins@46125561306434d8a1d7745d540d8932ab0cd2a2`, caminho `pstack/`: o upstream fornece skills, agentes e scripts auxiliares, mas não contém extensão Pi, núcleo de sessão, protocolo entre pacotes ou testes RPC/install. Portanto, ele é fonte de semântica e princípios, não de implementação runtime.
+- `brainmaxxing@7556e35`: a extensão publicada usa marcadores próprios para substituir seu bloco em `before_agent_start`, calcula orçamento com `ctx.getContextUsage()`, limita a contribuição a 16 KiB, consulta `ctx.cwd` e confiança a cada turno, e mantém leitura do vault fora de qualquer escrita implícita.
+- Worktree read-only `brainmaxxing:t3-pbrain-v1-provider`: o candidato ainda não commitado publica `pbrain/v1` por `globalThis[Symbol.for("pbrain/v1")]`, carrega schemas fechados e versionados, limita payloads e valida paths/trust. Os 13 testes focados e o typecheck passaram, mas esse estado continua evidência de integração em curso, não contrato lançado.
+
+### Absorver ou adaptar
+
+1. Usar o princípio upstream de boundary discipline: descobrir capabilities no boundary e converter dados externos em um estado interno pequeno. O pi-pstack mantém o preflight obrigatório separado do diagnóstico opcional.
+2. Adaptar a descoberta para o símbolo global versionado já publicado pelo provider em desenvolvimento. O consumidor valida estruturalmente somente o mínimo necessário para T2 e não importa arquivos internos do pbrain.
+3. Medir contribuição de prompt em bytes UTF-8 e registrar `ctx.getContextUsage()` quando disponível. Qualquer conversão bytes/tokens permanece explicitamente rotulada como estimativa.
+4. Preservar ownership de composição: cada extensão remove ou evita somente o próprio bloco. O pi-pstack não remove, reordena nem reescreve marcadores do pbrain.
+5. Adaptar o harness runtime do pbrain: usar o SDK público para observar o prompt real sem chamada de modelo, além de RPC/install em HOME temporário. Cobrir standalone e os dois pacotes juntos sem ler o vault real do usuário.
+6. Manter requests futuros com `cwd` absoluto e estado de confiança explícito. Schemas fechados, limites de payload e validação bilateral pertencem a T3.
+7. Manter allowlists de pacote e testes de árvore para provar que pi-pstack não publica nem escreve `brain/**`, `.brainmaxxing/**` ou código pertencente ao provider.
+
+### Manter fora
+
+- Não copiar catálogo, leitura de vault, migração, reflexão, reviewer workflow ou montagem do bloco Brainmaxxing para o pi-pstack.
+- Não criar um segundo transporte por event bus para `pbrain/v1`; isso duplicaria o símbolo global já escolhido pelo provider e criaria duas fontes de discovery.
+- Não portar setup de modelos, comandos ou detalhes Cursor-only do upstream. A adaptação continua Pi-native.
+- Não promover os schemas não commitados do pbrain a fonte vendorizada. O consumidor terá validação mínima própria até T3 fechar o contrato bilateral.
+- Não introduzir Firstmate, Herdr ou outro orquestrador nesta linha de trabalho.
+
 ## Decisões de arquitetura
 
 1. **Dois pacotes, um protocolo opcional.** Não copiar código, skills ou vault do pbrain para o pi-pstack. Não adicionar pbrain como dependência obrigatória.
@@ -64,14 +90,15 @@ T1 baseline e métricas
 **Critérios de aceitação:**
 
 - Fixtures reproduzem pstack sozinho e pstack+pbrain.
-- Métricas registram bytes/tokens adicionados ao prompt e tempo dos principais hooks.
+- Métricas registram bytes adicionados, estimativa de tokens, uso real reportado pelo Pi e tempo dos principais hooks.
 - A execução sem pbrain vira teste de regressão obrigatório.
 
 **Verificação:**
 
 - `npm run verify:deterministic`
 - RPC real confirma comandos e skills atuais.
-- Snapshot do prompt não contém duplicação de blocos/princípios.
+- SDK público captura o prompt standalone e combinado sem chamada de modelo.
+- Snapshot do prompt não contém duplicação de blocos/princípios e cada extensão preserva o bloco da outra.
 
 **Dependências:** nenhuma.
 
@@ -86,11 +113,14 @@ T1 baseline e métricas
 - `poteto-mode.ts` delega descoberta e composição a módulos testáveis.
 - Estado permanece isolado por sessão/branch e restaura sem vazar para outra sessão.
 - Ausência ou falha de capability opcional não altera o fluxo standalone.
+- Discovery usa `Symbol.for("pbrain/v1")`, valida somente a superfície mínima e não importa o pacote provider.
+- O pacote e o runtime do pi-pstack não leem nem escrevem `brain/**` ou `.brainmaxxing/**`.
 
 **Verificação:**
 
 - Testes unitários de lifecycle, restauração e isolamento.
 - Teste deliberado com capability inválida confirma fail-soft.
+- Teste de package ownership rejeita caminhos do pbrain no artefato publicado.
 
 **Dependências:** T1.
 
