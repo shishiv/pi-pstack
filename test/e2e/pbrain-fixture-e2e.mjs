@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createAgentSession,
+  DefaultResourceLoader,
+  SessionManager,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const home = await mkdtemp(join(tmpdir(), "pi-pstack-pbrain-e2e-home-"));
@@ -28,6 +34,49 @@ try {
   ]) {
     const install = spawnSync("pi", ["install", source], { cwd, encoding: "utf8", env });
     assert.equal(install.status, 0, `pi install failed\n${install.stdout}\n${install.stderr}`);
+  }
+  const brain = join(cwd, "brain");
+  const ownedPath = join(brain, "owned.md");
+  await mkdir(brain);
+  await writeFile(ownedPath, "provider-owned\n");
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  const settings = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
+  const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: settings });
+  await loader.reload();
+  const { session } = await createAgentSession({
+    cwd,
+    agentDir,
+    resourceLoader: loader,
+    settingsManager: settings,
+    sessionManager: SessionManager.inMemory(cwd),
+  });
+  try {
+    await session.bindExtensions({ mode: "print" });
+    assert.equal(await session._tryExecuteExtensionCommand("/poteto-mode on"), true);
+    const first = await session._extensionRunner.emitBeforeAgentStart(
+      "fixture",
+      undefined,
+      session.systemPrompt,
+      session._baseSystemPromptOptions,
+    );
+    const second = await session._extensionRunner.emitBeforeAgentStart(
+      "fixture",
+      undefined,
+      first.systemPrompt,
+      session._baseSystemPromptOptions,
+    );
+    for (const prompt of [first.systemPrompt, second.systemPrompt]) {
+      assert.equal((prompt.match(/## Loaded skill:/g) ?? []).length, 1);
+      assert.equal((prompt.match(/brainmaxxing:context:start/g) ?? []).length, 1);
+      assert.equal((prompt.match(/brainmaxxing:context:end/g) ?? []).length, 1);
+    }
+    assert.equal(await readFile(ownedPath, "utf8"), "provider-owned\n");
+  } finally {
+    await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    session.dispose();
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
   }
   const child = spawn("pi", ["--mode", "rpc"], {
     cwd,

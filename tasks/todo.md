@@ -4,11 +4,14 @@
   - [x] instalação isolada de pi-pstack e pi-pstack+pbrain reproduzível
   - [x] regressão standalone coberta
   - [x] bytes/tokens e tempo dos hooks medidos
+  - [x] SDK captura prompt standalone e combinado sem chamada de modelo
 
 - [x] T2: criar núcleo único de sessão e capability preflight
   - [x] extensão delega coordenação para módulo testável
   - [x] estado isolado por sessão/branch
   - [x] capability ausente ou inválida mantém o fluxo standalone
+  - [x] discovery usa `Symbol.for("pbrain/v1")` sem import do provider
+  - [x] pacote e runtime preservam ownership de `brain/**`
 
 ## Checkpoint A
 

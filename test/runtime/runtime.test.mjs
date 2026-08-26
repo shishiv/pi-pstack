@@ -207,6 +207,9 @@ function fakeRuntime({
     isProjectTrusted() {
       return true;
     },
+    getContextUsage() {
+      return { contextWindow: 100_000, tokens: 25_000, percent: 25 };
+    },
   };
   potetoModeExtension(pi);
   return {
@@ -267,6 +270,7 @@ test("session core composes the standalone prompt once and measures its cost", a
   const first = await session.composePrompt({
     systemPrompt: "base",
     skills: [{ name: "poteto-mode", filePath: "/fixture/SKILL.md", content: "# Poteto mode" }],
+    contextUsage: { contextWindow: 100_000, tokens: 25_000 },
   });
   assert.equal(first, "base\n\n## Loaded skill: /fixture/SKILL.md\n\n# Poteto mode");
   assert.deepEqual(metrics.at(-1), {
@@ -276,6 +280,8 @@ test("session core composes the standalone prompt once and measures its cost", a
     promptBytesAfter: 55,
     addedBytes: 51,
     estimatedAddedTokens: 13,
+    contextWindowTokens: 100_000,
+    contextUsageTokens: 25_000,
   });
   assert.equal(
     await session.composePrompt({
@@ -303,7 +309,8 @@ test("standalone prompt snapshot stays deterministic without duplicate skill blo
 });
 
 test("session core restores each branch and optional capability failures stay fail-soft", async () => {
-  const session = createPotetoSession({ appendEntry() {} });
+  let capability;
+  const session = createPotetoSession({ appendEntry() {}, resolveCapability: () => capability });
   session.restore([{ type: "custom", customType: "poteto-mode", data: { active: true } }]);
   assert.equal(session.active, true);
   session.restore([]);
@@ -313,34 +320,55 @@ test("session core restores each branch and optional capability failures stay fa
     tools: ["subagent", "ask"],
     commands: ["poteto-mode"],
     availableModels: [],
+    cwd: "/workspace",
+    trusted: true,
   });
   assert.equal(standalone.required.ok, true);
-  assert.deepEqual(standalone.optional, []);
+  assert.deepEqual(standalone.optional, {
+    name: "pbrain/v1",
+    status: "absent",
+    diagnostic: "pbrain/v1 is not registered.",
+  });
 
-  assert.equal(
-    session.registerCapability({ name: "pbrain/v1", probe: async () => ({ status: "available" }) }),
-    true,
-  );
-  assert.equal(
-    session.registerCapability({
-      name: "broken/v1",
-      probe: async () => {
-        throw new Error("invalid response");
-      },
+  capability = {
+    protocol: "pbrain/v1",
+    protocolVersion: 1,
+    status: async ({ cwd, trusted }) => ({
+      schemaVersion: 1,
+      protocol: "pbrain/v1",
+      providerVersion: "0.2.0",
+      state: cwd === "/workspace" && trusted ? "available" : "unavailable",
+      diagnostic: "fixture",
     }),
-    true,
-  );
-  assert.equal(session.registerCapability({ name: "invalid/v1" }), false);
+  };
   const integrated = await session.preflight({
     tools: ["subagent", "ask"],
     commands: ["poteto-mode"],
     availableModels: [],
+    cwd: "/workspace",
+    trusted: true,
   });
   assert.equal(integrated.required.ok, true);
-  assert.deepEqual(integrated.optional, [
-    { name: "pbrain/v1", status: "available" },
-    { name: "broken/v1", status: "unavailable", diagnostic: "invalid response" },
-  ]);
+  assert.deepEqual(integrated.optional, {
+    name: "pbrain/v1",
+    status: "available",
+    providerVersion: "0.2.0",
+    diagnostic: "fixture",
+  });
+
+  capability = { protocol: "pbrain/v1", protocolVersion: 2, status: async () => ({}) };
+  const incompatible = await session.preflight({
+    tools: ["subagent", "ask"],
+    commands: ["poteto-mode"],
+    availableModels: [],
+    cwd: "/workspace",
+    trusted: true,
+  });
+  assert.deepEqual(incompatible.optional, {
+    name: "pbrain/v1",
+    status: "incompatible",
+    diagnostic: "Expected pbrain/v1 protocol version 1.",
+  });
 });
 
 test("model roles resolve from scoped available Pi models and never invent ids", () => {
@@ -420,20 +448,26 @@ test("one extension instance resets sticky state when Pi switches sessions", asy
 
 test("extension discovers an invalid optional capability without changing standalone flow", async () => {
   const runtime = fakeRuntime();
-  runtime.pi.events.emit("pstack:capability", {
-    name: "broken/v1",
-    probe: async () => {
+  const key = Symbol.for("pbrain/v1");
+  globalThis[key] = {
+    protocol: "pbrain/v1",
+    protocolVersion: 1,
+    status: async () => {
       throw new Error("broken fixture");
     },
-  });
-  await runtime.handlers.get("session_start")?.({}, runtime.ctx);
-  await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
-  assert.equal(runtime.messages.length, 1);
-  assert.ok(
-    runtime.emittedEvents.some(
-      ({ name, data }) => name === "pstack:runtime-metric" && data.hook === "session_start",
-    ),
-  );
+  };
+  try {
+    await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+    await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
+    assert.equal(runtime.messages.length, 1);
+    assert.ok(
+      runtime.emittedEvents.some(
+        ({ name, data }) => name === "pstack:runtime-metric" && data.hook === "session_start",
+      ),
+    );
+  } finally {
+    delete globalThis[key];
+  }
 });
 
 test("verification tool generates a registered project-local skill", async () => {

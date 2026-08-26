@@ -9,6 +9,18 @@
     "subagents",
     "verification"
   ],
+  "files": [
+    "agents",
+    "automations",
+    "docs",
+    "extensions",
+    "scripts",
+    "skills",
+    "src",
+    "LICENSE",
+    "README.md",
+    "UPSTREAM.md"
+  ],
   "type": "module",
   "exports": {
     "./benny": "./src/benny/index.ts",

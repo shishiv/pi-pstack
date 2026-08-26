@@ -37,21 +37,20 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     recordMetric: (metric) => pi.events.emit("pstack:runtime-metric", metric),
   });
 
-  pi.events.on("pstack:capability", (capability) => session.registerCapability(capability));
-
   async function preflight(ctx: ExtensionContext): Promise<string[]> {
     const result = await session.preflight({
       tools: pi.getAllTools(),
       commands: pi.getCommands(),
       availableModels: ctx.modelRegistry.getAvailable(),
       scopedModels: ctx.scopedModels,
+      cwd: ctx.cwd,
+      trusted: ctx.isProjectTrusted(),
     });
     return result.required.diagnostics;
   }
 
   pi.on("session_start", async (_event, ctx) => {
     await session.lifecycle("session_start", ctx.sessionManager.getBranch(), async () => {
-      pi.events.emit("pstack:capability-discover", undefined);
       await preflight(ctx);
     });
   });
@@ -439,11 +438,12 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     }
   });
 
-  pi.on("before_agent_start", async (event: BeforeAgentStartEvent) => {
+  pi.on("before_agent_start", async (event: BeforeAgentStartEvent, ctx) => {
     if (!session.active) return;
     const systemPrompt = await session.composePrompt({
       systemPrompt: event.systemPrompt,
       skills: event.systemPromptOptions.skills,
+      contextUsage: ctx.getContextUsage() ?? undefined,
     });
     return systemPrompt ? { systemPrompt } : undefined;
   });

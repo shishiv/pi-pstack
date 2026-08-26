@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -28,4 +29,33 @@ test("pins the locally proven Pi compatibility floor", async () => {
   assert.equal(manifest.peerDependencies["@howaboua/pi-ask"], ">=0.0.5");
   assert.equal(manifest.peerDependencies.typebox, "*");
   assert.equal(manifest.devDependencies.jiti, "2.7.0");
+});
+
+test("packed package excludes provider-owned paths and integration fixtures", async () => {
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  assert.deepEqual(manifest.files, [
+    "agents",
+    "automations",
+    "docs",
+    "extensions",
+    "scripts",
+    "skills",
+    "src",
+    "LICENSE",
+    "README.md",
+    "UPSTREAM.md",
+  ]);
+  const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+    cwd: new URL("../..", import.meta.url),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const report = JSON.parse(result.stdout);
+  const packed = (Array.isArray(report) ? report[0] : Object.values(report)[0]).files.map(
+    ({ path }) => path,
+  );
+  assert.equal(
+    packed.some((path) => /^(?:brain|\.brainmaxxing|fixtures|tasks|test)\//.test(path)),
+    false,
+  );
 });
