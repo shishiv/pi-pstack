@@ -1,0 +1,11 @@
+{
+  "name": "pbrain-capability-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  }
+}

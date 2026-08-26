@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   BeforeAgentStartEvent,
@@ -6,7 +6,6 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { preflightCapabilities } from "../src/capabilities/preflight.js";
 import { listBennyAdapterProviders, runBennyRuntime } from "../src/benny/index.js";
 import {
   authorizeDelivery,
@@ -19,20 +18,10 @@ import {
   type StackBackendName,
   type StackOperation,
 } from "../src/delivery/index.js";
-import { POTETO_MODE_ENTRY, modeStateEntry, restoreModeState } from "../src/mode/state.js";
+import { createPotetoSession } from "../src/runtime/session.js";
 import { generateProjectVerificationSkill } from "../src/verification/index.js";
 
 const COMMAND = "poteto-mode";
-
-interface LoadedSkill {
-  name?: string;
-  filePath?: string;
-  content?: string;
-}
-
-function branchState(ctx: ExtensionContext): boolean {
-  return restoreModeState(ctx.sessionManager.getBranch()).active;
-}
 
 function notify(
   ctx: ExtensionContext,
@@ -43,38 +32,32 @@ function notify(
 }
 
 export default function potetoModeExtension(pi: ExtensionAPI): void {
-  let active = false;
+  const session = createPotetoSession({
+    appendEntry: (type, data) => pi.appendEntry(type, data),
+    recordMetric: (metric) => pi.events.emit("pstack:runtime-metric", metric),
+  });
 
-  function persist(next: boolean): void {
-    active = next;
-    pi.appendEntry(POTETO_MODE_ENTRY, modeStateEntry(next));
-  }
+  pi.events.on("pstack:capability", (capability) => session.registerCapability(capability));
 
-  function restore(ctx: ExtensionContext): void {
-    // This closure is intentionally reset from the active branch on every
-    // session lifecycle event. It prevents state leaking across sessions.
-    active = branchState(ctx);
-  }
-
-  function preflight(ctx: ExtensionContext): string[] {
-    const result = preflightCapabilities({
+  async function preflight(ctx: ExtensionContext): Promise<string[]> {
+    const result = await session.preflight({
       tools: pi.getAllTools(),
       commands: pi.getCommands(),
       availableModels: ctx.modelRegistry.getAvailable(),
       scopedModels: ctx.scopedModels,
     });
-    return result.diagnostics;
+    return result.required.diagnostics;
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    restore(ctx);
-    // Probe all host capability surfaces during startup without changing
-    // settings or failing print/JSON sessions. A task invocation fails closed.
-    preflight(ctx);
+    await session.lifecycle("session_start", ctx.sessionManager.getBranch(), async () => {
+      pi.events.emit("pstack:capability-discover", undefined);
+      await preflight(ctx);
+    });
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    restore(ctx);
+    await session.lifecycle("session_tree", ctx.sessionManager.getBranch());
   });
 
   pi.registerCommand(COMMAND, {
@@ -82,26 +65,26 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     handler: async (args, ctx) => {
       const value = args.trim();
       if (value === "" || value === "status") {
-        notify(ctx, `poteto mode is ${active ? "active" : "off"}.`);
+        notify(ctx, `poteto mode is ${session.active ? "active" : "off"}.`);
         return;
       }
       if (value === "on") {
-        persist(true);
+        session.setActive(true);
         notify(ctx, "poteto mode enabled.");
         return;
       }
       if (value === "off") {
-        persist(false);
+        session.setActive(false);
         notify(ctx, "poteto mode disabled.");
         return;
       }
 
-      const diagnostics = preflight(ctx);
+      const diagnostics = await preflight(ctx);
       if (diagnostics.length > 0) {
         notify(ctx, `poteto mode task unavailable.\n${diagnostics.join("\n")}`, "error");
         return;
       }
-      persist(true);
+      session.setActive(true);
       const options = ctx.isIdle()
         ? { expandPromptTemplates: true }
         : { deliverAs: "followUp" as const, expandPromptTemplates: true };
@@ -446,7 +429,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_call", async (event) => {
-    if (!active || event.toolName === "pstack_delivery") return;
+    if (!session.active || event.toolName === "pstack_delivery") return;
     const payload = `${event.toolName}\n${normalizeToolCallInput(event.input)}`;
     if (containsDirectMerge(payload)) {
       return {
@@ -457,18 +440,12 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("before_agent_start", async (event: BeforeAgentStartEvent) => {
-    if (!active) return;
-    const skill = event.systemPromptOptions.skills?.find(
-      (candidate) => candidate.name === "poteto-mode",
-    ) as LoadedSkill | undefined;
-    if (!skill) return;
-    const content =
-      skill.content ??
-      (skill.filePath ? await readFile(skill.filePath, "utf8").catch(() => undefined) : undefined);
-    if (!content) return;
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n## Loaded skill: ${skill.filePath ?? "poteto-mode"}\n\n${content}`,
-    };
+    if (!session.active) return;
+    const systemPrompt = await session.composePrompt({
+      systemPrompt: event.systemPrompt,
+      skills: event.systemPromptOptions.skills,
+    });
+    return systemPrompt ? { systemPrompt } : undefined;
   });
 }
 

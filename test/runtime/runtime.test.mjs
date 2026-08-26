@@ -9,6 +9,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const { restoreModeState, modeStateEntry } = await jiti.import("../../src/mode/state.ts");
 const { preflightCapabilities } = await jiti.import("../../src/capabilities/preflight.ts");
+const { createPotetoSession } = await jiti.import("../../src/runtime/session.ts");
 const { resolveModelRoles } = await jiti.import("../../src/models/roles.ts");
 const { registerBennyAdapterProvider } = await jiti.import("../../src/benny/index.ts");
 const { gradeCandidate } = await jiti.import("../../src/evals/index.ts");
@@ -140,6 +141,8 @@ function fakeRuntime({
   const entriesWritten = [];
   const messages = [];
   const notices = [];
+  const extensionEvents = new Map();
+  const emittedEvents = [];
   const pi = {
     on(name, handler) {
       handlers.set(name, handler);
@@ -163,7 +166,17 @@ function fakeRuntime({
       return commands.map((name) => ({ name, source: "extension", sourceInfo: {} }));
     },
     exec,
-    events: {},
+    events: {
+      on(name, handler) {
+        const listeners = extensionEvents.get(name) ?? [];
+        listeners.push(handler);
+        extensionEvents.set(name, listeners);
+      },
+      emit(name, data) {
+        emittedEvents.push({ name, data });
+        for (const handler of extensionEvents.get(name) ?? []) handler(data);
+      },
+    },
     sessionManager: {
       getBranch() {
         return currentEntries;
@@ -205,6 +218,7 @@ function fakeRuntime({
     entriesWritten,
     messages,
     notices,
+    emittedEvents,
     setEntries(next) {
       currentEntries = next;
     },
@@ -235,6 +249,98 @@ test("capability preflight reports missing tools, commands, and roles", () => {
   assert.deepEqual(result.missingTools, ["ask"]);
   assert.deepEqual(result.missingCommands, ["poteto-mode"]);
   assert.deepEqual(result.missingRoles, ["reasoning"]);
+});
+
+test("session core composes the standalone prompt once and measures its cost", async () => {
+  const metrics = [];
+  const session = createPotetoSession({
+    appendEntry() {},
+    recordMetric(metric) {
+      metrics.push(metric);
+    },
+    now: (() => {
+      let value = 10;
+      return () => ++value;
+    })(),
+  });
+  session.restore([{ type: "custom", customType: "poteto-mode", data: { active: true } }]);
+  const first = await session.composePrompt({
+    systemPrompt: "base",
+    skills: [{ name: "poteto-mode", filePath: "/fixture/SKILL.md", content: "# Poteto mode" }],
+  });
+  assert.equal(first, "base\n\n## Loaded skill: /fixture/SKILL.md\n\n# Poteto mode");
+  assert.deepEqual(metrics.at(-1), {
+    hook: "before_agent_start",
+    durationMs: 1,
+    promptBytesBefore: 4,
+    promptBytesAfter: 55,
+    addedBytes: 51,
+    estimatedAddedTokens: 13,
+  });
+  assert.equal(
+    await session.composePrompt({
+      systemPrompt: first,
+      skills: [{ name: "poteto-mode", filePath: "/fixture/SKILL.md", content: "# Poteto mode" }],
+    }),
+    undefined,
+  );
+  await session.lifecycle("session_start", [], async () => "ready");
+  assert.deepEqual(metrics.at(-1), { hook: "session_start", durationMs: 1 });
+});
+
+test("standalone prompt snapshot stays deterministic without duplicate skill blocks", async () => {
+  const session = createPotetoSession({ appendEntry() {} });
+  session.restore([{ type: "custom", customType: "poteto-mode", data: { active: true } }]);
+  const systemPrompt = await session.composePrompt({
+    systemPrompt: "baseline",
+    skills: [{ name: "poteto-mode", filePath: "skills/poteto-mode/SKILL.md" }],
+  });
+  assert.equal(
+    digest(systemPrompt),
+    "f18d38f210317e9669e7bfadda3a331a8b6ad476a5368257a82bdfa1c1272762",
+  );
+  assert.equal(systemPrompt.match(/## Loaded skill:/g)?.length, 1);
+});
+
+test("session core restores each branch and optional capability failures stay fail-soft", async () => {
+  const session = createPotetoSession({ appendEntry() {} });
+  session.restore([{ type: "custom", customType: "poteto-mode", data: { active: true } }]);
+  assert.equal(session.active, true);
+  session.restore([]);
+  assert.equal(session.active, false);
+
+  const standalone = await session.preflight({
+    tools: ["subagent", "ask"],
+    commands: ["poteto-mode"],
+    availableModels: [],
+  });
+  assert.equal(standalone.required.ok, true);
+  assert.deepEqual(standalone.optional, []);
+
+  assert.equal(
+    session.registerCapability({ name: "pbrain/v1", probe: async () => ({ status: "available" }) }),
+    true,
+  );
+  assert.equal(
+    session.registerCapability({
+      name: "broken/v1",
+      probe: async () => {
+        throw new Error("invalid response");
+      },
+    }),
+    true,
+  );
+  assert.equal(session.registerCapability({ name: "invalid/v1" }), false);
+  const integrated = await session.preflight({
+    tools: ["subagent", "ask"],
+    commands: ["poteto-mode"],
+    availableModels: [],
+  });
+  assert.equal(integrated.required.ok, true);
+  assert.deepEqual(integrated.optional, [
+    { name: "pbrain/v1", status: "available" },
+    { name: "broken/v1", status: "unavailable", diagnostic: "invalid response" },
+  ]);
 });
 
 test("model roles resolve from scoped available Pi models and never invent ids", () => {
@@ -310,6 +416,24 @@ test("one extension instance resets sticky state when Pi switches sessions", asy
   await runtime.handlers.get("session_start")?.({ reason: "new" }, runtime.ctx);
   await runtime.commandsByName.get("poteto-mode")?.("status", runtime.ctx);
   assert.match(runtime.notices.at(-1).message, /off/i);
+});
+
+test("extension discovers an invalid optional capability without changing standalone flow", async () => {
+  const runtime = fakeRuntime();
+  runtime.pi.events.emit("pstack:capability", {
+    name: "broken/v1",
+    probe: async () => {
+      throw new Error("broken fixture");
+    },
+  });
+  await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+  await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
+  assert.equal(runtime.messages.length, 1);
+  assert.ok(
+    runtime.emittedEvents.some(
+      ({ name, data }) => name === "pstack:runtime-metric" && data.hook === "session_start",
+    ),
+  );
 });
 
 test("verification tool generates a registered project-local skill", async () => {
