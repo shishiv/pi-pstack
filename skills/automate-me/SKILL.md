@@ -1,6 +1,6 @@
 ---
 name: automate-me
-description: "Use for \"automate me\", \"create/update/refresh my -mode skill\", \"turn/capture my preferences or working style into a skill\", or wanting agents to follow how the user works. Drafts or revises a personal -mode skill via create-skill + unslop, optionally pulling fresh evidence from recent transcripts."
+description: "Use for \"automate me\", \"create/update/refresh my -mode skill\", \"turn/capture my preferences or working style into a skill\", or wanting agents to follow how the user works. Drafts or revises a personal -mode skill via the host's skill-authoring workflow and unslop, optionally pulling fresh evidence from recent transcripts."
 disable-model-invocation: true
 ---
 
@@ -69,12 +69,12 @@ Use the host's skill-authoring workflow to author the skill. Placement:
 - Path: preserve an existing mode skill's category. For a new mode, use `.pi/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle; otherwise default to `.pi/skills/<handle>-mode/SKILL.md` in the project (or `~/.pi/agent/skills/<handle>-mode/` if the user prefers a personal skill).
 - Handle: the user's first name or chosen identifier.
 - Frontmatter `description`: trigger on their name + `/<handle>-mode` + "work in their style", not on generic keywords like "write code" or "review PR".
-- Frontmatter formatting: follow `create-skill`'s YAML rules. Keep `description` as one YAML scalar; quote it or use `description: >-` with indented continuation lines when punctuation or wrapping requires it.
+- Frontmatter formatting follows the Pi Agent Skills contract and `playbooks/authoring-a-skill.md`. Keep `description` as one YAML scalar. Quote it or use `description: >-` with indented continuation lines when punctuation or wrapping requires it.
 - Frontmatter `disable-model-invocation: true` by default. Mode skills are heavy and opinionated; they should only apply when the user explicitly invokes them (by name or slash command), not auto-trigger on description matching. Opt out only if the user explicitly wants their mode to apply on every turn.
 
 ### 5. Iterate on prose
 
-Apply the **unslop** skill and `create-skill`'s writing guidelines to every line. Both apply to any agent-read prose, not just skills.
+Apply the **unslop** skill and the host's skill-authoring workflow to every line. Agent-read prose follows both.
 
 Show the draft to the user and take feedback. Expect multiple iterations. Cut ruthlessly; a mode skill is not a manual.
 
@@ -93,13 +93,13 @@ Work in a worktree off main. Commit and open a PR so the user can review it. Don
 
 ## Evaluation
 
-A `-mode` skill is subjective output. A `create-skill`-style test/iterate benchmark loop isn't useful here. Vibe-check with the user: does it read like them? Did it miss anything? Then ship.
+A `-mode` skill is subjective output. A test/iterate benchmark loop isn't useful here. Vibe-check with the user. Does it read like them? Did it miss anything? Then ship.
 
 Run a description-optimization loop only if the skill's trigger accuracy turns out to be a problem in practice.
 
 ## When not to use
 
-- User wants a task-specific skill (not working conventions): `create-skill` alone, no mining required.
+- User wants a task-specific skill (not working conventions). Follow `playbooks/authoring-a-skill.md`. No mining required.
 - User wants to capture one narrow workflow (e.g. "how I write commit messages"): that's a regular skill, not a mode skill.
 
 ## Reference files
