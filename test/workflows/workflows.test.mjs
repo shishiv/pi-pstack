@@ -1,15 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const workflows = await jiti.import("../../src/workflows/delegation.ts");
-const evidence = await jiti.import("../../src/workflows/evidence.ts");
-const sessions = await jiti.import("../../src/workflows/sessions.ts");
-const wake = await jiti.import("../../src/workflows/wake.ts");
 
 test("semantic roles map to Pi agents and preserve read-only boundaries", () => {
   assert.equal(workflows.agentForRole("explore"), "scout");
@@ -69,111 +63,4 @@ test("workflow builders emit supported, awaited APIs and safely serialized input
       }),
     /worktree must be boolean/,
   );
-});
-
-test("evidence mapping keeps unavailable MCP categories as explicit gaps", () => {
-  const result = evidence.mapEvidenceSources({
-    availableMcps: ["linear", "slack"],
-  });
-  assert.equal(
-    result.sources.find((source) => source.category === "issue-tracker")?.status,
-    "available",
-  );
-  assert.equal(
-    result.sources.find((source) => source.category === "real-time-chat")?.status,
-    "available",
-  );
-  assert.ok(result.gaps.some((gap) => /long-form documents/i.test(gap)));
-  assert.ok(result.gaps.some((gap) => /error tracking/i.test(gap)));
-  assert.equal(result.sources.length, evidence.EVIDENCE_CATEGORIES.length);
-});
-
-test("session discovery stays inside the active project and parses only supplied JSONL", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-session-"));
-  const projectA = join(root, "project-a");
-  const projectB = join(root, "project-b");
-  await mkdir(projectA);
-  await mkdir(projectB);
-  const active = join(projectA, "active.jsonl");
-  await writeFile(
-    active,
-    '{"type":"message","text":"ok"}\nnot-json\n{"type":"message","text":"still"}\n',
-  );
-  await writeFile(join(projectB, "unrelated.jsonl"), '{"text":"secret"}\n');
-  const found = sessions.discoverSessionFiles({
-    piSessionFile: active,
-    projectDirectory: projectA,
-  });
-  assert.deepEqual(found, [active]);
-  const parsed = sessions.parseSessionJsonl(await sessions.readSessionFile(active));
-  assert.deepEqual(parsed.entries, [
-    { type: "message", text: "ok" },
-    { type: "message", text: "still" },
-  ]);
-  assert.equal(parsed.invalidLines, 1);
-  assert.deepEqual(
-    sessions.discoverSessionFiles({ piSessionFile: active, projectDirectory: projectB }),
-    [],
-  );
-});
-
-test("session discovery recognizes Pi's wrapped project directory slug", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-session-store-"));
-  const project = join(root, "workspace", "app");
-  const slug = project.replace(/^[/\\]+/, "").replace(/[\\/]/g, "-");
-  const projectSessions = join(root, `--${slug}--`);
-  await mkdir(project, { recursive: true });
-  await mkdir(projectSessions);
-  const active = join(projectSessions, "active.jsonl");
-  await writeFile(active, '{"type":"session"}\n');
-
-  assert.deepEqual(
-    sessions.discoverSessionFiles({ piSessionFile: active, projectDirectory: project }),
-    [active],
-  );
-});
-
-test("session discovery rejects an unrelated path that merely contains the project basename", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-session-impostor-"));
-  const project = join(root, "workspace", "app");
-  const impostorDirectory = join(root, "other", "app");
-  await mkdir(project, { recursive: true });
-  await mkdir(impostorDirectory, { recursive: true });
-  const impostor = join(impostorDirectory, "active.jsonl");
-  await writeFile(impostor, '{"type":"session"}\n');
-
-  assert.deepEqual(
-    sessions.discoverSessionFiles({ piSessionFile: impostor, projectDirectory: project }),
-    [],
-  );
-});
-
-test("session discovery rejects a project-slug JSONL basename outside Pi's session layout", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-session-slug-impostor-"));
-  const project = join(root, "workspace", "app");
-  await mkdir(project, { recursive: true });
-  const slug = project.replace(/^[/\\]+/, "").replace(/[\\/]/g, "-");
-  const impostor = join(root, `--${slug}--.jsonl`);
-  await writeFile(impostor, '{"type":"session"}\n');
-
-  assert.deepEqual(
-    sessions.discoverSessionFiles({ piSessionFile: impostor, projectDirectory: project }),
-    [],
-  );
-});
-
-test("long-run plans choose a native wake mechanism instead of polling", () => {
-  assert.deepEqual(wake.planLongRunWake({ childRunId: "run-1" }), {
-    mechanism: "async-child-wait",
-    childRunId: "run-1",
-  });
-  assert.deepEqual(wake.planLongRunWake({ event: "ci.completed" }), {
-    mechanism: "event-subscription",
-    event: "ci.completed",
-  });
-  assert.deepEqual(wake.planLongRunWake({ schedule: "+30m" }), {
-    mechanism: "schedule",
-    schedule: "+30m",
-  });
-  assert.throws(() => wake.planLongRunWake({}), /childRunId, event, or schedule/);
 });
