@@ -195,10 +195,7 @@ export interface DeliveryBackends {
   ghStack: GhStackBackend;
 }
 
-export function createDeliveryBackends(options: {
-  runner: CommandRunner;
-  availableCommands?: readonly (string | { name: string })[];
-}): DeliveryBackends {
+export function createDeliveryBackends(options: { runner: CommandRunner }): DeliveryBackends {
   return { ghStack: new GhStackBackend(options.runner) };
 }
 

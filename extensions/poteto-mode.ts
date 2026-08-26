@@ -366,7 +366,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
                 root: ctx.cwd,
                 repoIdentity: repository.stdout.trim(),
                 headSha: entry.headSha,
-                backend: params.backend as StackBackendName,
+                backend: params.backend,
                 level,
               });
               if (rejection) return deliveryRejected(rejection);
@@ -389,7 +389,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
               root: ctx.cwd,
               repoIdentity: repository.stdout.trim(),
               headSha: currentHead.stdout.trim(),
-              backend: params.backend as StackBackendName,
+              backend: params.backend,
               level,
             });
             if (rejection) return deliveryRejected(rejection);
@@ -397,7 +397,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
               receipt,
               repoIdentity: repository.stdout.trim(),
               currentHeadSha: currentHead.stdout.trim(),
-              backend: params.backend as StackBackendName,
+              backend: params.backend,
               level,
             });
             if (authorization.draftOnly && params.operation === "submit" && params.draft === false)

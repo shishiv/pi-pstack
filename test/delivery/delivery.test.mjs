@@ -66,6 +66,11 @@ test("gh stack inspect returns proven parent-first members for a two-PR chain", 
   );
   const prefix = delivery.membersThrough(snapshot.members, "42");
   assert.deepEqual(prefix, snapshot.members);
+  assert.deepEqual(
+    delivery.membersThrough(snapshot.members, "41")?.map((member) => member.pullRequest),
+    ["41"],
+  );
+  assert.equal(delivery.membersThrough(snapshot.members, "99"), undefined);
 });
 
 test("gh stack inspect is unproven for invalid membership topologies", async () => {
@@ -74,8 +79,8 @@ test("gh stack inspect is unproven for invalid membership topologies", async () 
       "fork",
       {
         branches: [
-          { head: "aaa", base: "000", pr: { number: 1, state: "OPEN" } },
-          { head: "bbb", base: "000", pr: { number: 2, state: "OPEN" } },
+          { head: "aaa111", base: "000000", pr: { number: 1, state: "OPEN" } },
+          { head: "bbb222", base: "000000", pr: { number: 2, state: "OPEN" } },
         ],
       },
     ],
@@ -83,8 +88,8 @@ test("gh stack inspect is unproven for invalid membership topologies", async () 
       "cycle",
       {
         branches: [
-          { head: "aaa", base: "bbb", pr: { number: 1, state: "OPEN" } },
-          { head: "bbb", base: "aaa", pr: { number: 2, state: "OPEN" } },
+          { head: "aaa111", base: "bbb222", pr: { number: 1, state: "OPEN" } },
+          { head: "bbb222", base: "aaa111", pr: { number: 2, state: "OPEN" } },
         ],
       },
     ],
@@ -92,15 +97,15 @@ test("gh stack inspect is unproven for invalid membership topologies", async () 
       "duplicate head",
       {
         branches: [
-          { head: "aaa", base: "000", pr: { number: 1, state: "OPEN" } },
-          { head: "aaa", base: "111", pr: { number: 2, state: "OPEN" } },
+          { head: "aaa111", base: "000000", pr: { number: 1, state: "OPEN" } },
+          { head: "aaa111", base: "111111", pr: { number: 2, state: "OPEN" } },
         ],
       },
     ],
     [
       "missing base",
       {
-        branches: [{ head: "aaa", pr: { number: 1, state: "OPEN" } }],
+        branches: [{ head: "aaa111", pr: { number: 1, state: "OPEN" } }],
       },
     ],
     ["exit code 1 with valid JSON", twoPrStack, 1],
@@ -111,8 +116,8 @@ test("gh stack inspect is unproven for invalid membership topologies", async () 
       {
         branches: [
           {
-            head: "aaa",
-            base: "000",
+            head: "aaa111",
+            base: "000000",
             isMerged: true,
             pr: { number: 1, state: "MERGED" },
           },
@@ -160,9 +165,9 @@ test("gh stack adapter emits only documented non-interactive commands", async ()
 
 test("createDeliveryBackends exposes gh stack only", () => {
   const runner = runnerForStack(twoPrStack);
-  const backends = delivery.createDeliveryBackends({ runner, availableCommands: ["gh", "gt"] });
+  const backends = delivery.createDeliveryBackends({ runner });
   assert.ok(backends.ghStack);
-  assert.equal(backends.graphite, undefined);
+  assert.equal("graphite" in backends, false);
 });
 
 test("stack adapters reject flag-shaped branch and pull request operands", async () => {
