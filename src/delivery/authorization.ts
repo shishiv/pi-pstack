@@ -38,8 +38,7 @@ export function validateEvidenceReceipt(receipt: unknown): string[] {
   }
   if (!validFileEvidence(value.featureMap)) reasons.push("invalid feature map evidence");
   if (!validFileEvidence(value.skill)) reasons.push("invalid skill evidence");
-  if (value.backend !== "gh-stack" && value.backend !== "graphite")
-    reasons.push("missing evidence: backend");
+  if (value.backend !== "gh-stack") reasons.push("missing evidence: backend");
 
   const checks = value.deterministicChecks;
   if (

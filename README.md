@@ -14,7 +14,7 @@ O `pi-pstack` preserva o método verification-first do projeto original: context
 - `/poteto-mode` persistente durante a sessão ativa.
 - Feature maps, artifacts de navegador e receipts vinculados ao `HEAD` exato.
 - Evals cegos entre modelos, com hard assertions que o judge não pode ignorar.
-- Stacked PRs com `gh stack` por padrão e Graphite como backend opcional.
+- Stacked PRs com `gh stack`.
 - Benny em modo draft-only: ele pode preparar uma draft PR, mas nunca faz merge ou deploy.
 
 ## Requisitos
@@ -26,8 +26,7 @@ O `pi-pstack` preserva o método verification-first do projeto original: context
 - Bun para as ferramentas locais que o utilizam.
 - `portless` para fluxos locais que expõem serviços.
 - Playwright Chromium para verificação de navegador.
-- `github/gh-stack` como backend padrão de stacked PRs.
-- Graphite `gt` somente quando o backend opcional for selecionado.
+- `github/gh-stack` como backend de stacked PRs.
 - Um provider externo de Slack e tracker para executar Benny contra serviços reais.
 
 ## Instalação
@@ -84,7 +83,7 @@ O modo sticky vale somente para a sessão ativa. O Pi restaura o estado pelo his
 
 ## Stacked PRs
 
-`gh stack` é o backend padrão. O adapter Graphite só aparece quando `gt` está instalado. O pacote traduz operações para os CLIs oficiais e não mantém um segundo grafo de branches.
+`gh stack` é o backend de delivery. O pacote traduz operações para o CLI oficial e não mantém um segundo grafo de branches.
 
 O merge atômico exige um receipt por PR até o alvo. Gere cada receipt no checkout limpo do respectivo `HEAD` e mantenha os artifacts em caminhos imutáveis disponíveis durante a validação final. Se um digest de uma camada anterior não estiver disponível no checkout atual, o merge falha fechado.
 

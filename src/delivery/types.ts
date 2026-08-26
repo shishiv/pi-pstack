@@ -2,9 +2,33 @@
 export const AUTONOMY_LEVELS = ["verify", "prepare", "pr", "merge-ready", "auto-merge"] as const;
 
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
-export type StackBackendName = "gh-stack" | "graphite";
+export type StackBackendName = "gh-stack";
 export type DeliveryOrigin = "human" | "benny";
 export type ProjectReadiness = "ready" | "not-ready";
+
+export type GitSha = string & { readonly __brand: "GitSha" };
+export type PullRequestNumber = string & { readonly __brand: "PullRequestNumber" };
+
+export interface StackMember {
+  readonly pullRequest: PullRequestNumber;
+  readonly headSha: GitSha;
+  readonly baseSha: GitSha;
+}
+
+export type ProvenMembers = readonly [StackMember, ...StackMember[]] & {
+  readonly __brand: "ProvenMembers";
+};
+
+export type StackSnapshot =
+  | {
+      readonly kind: "proven";
+      readonly backend: StackBackendName;
+      readonly members: ProvenMembers;
+    }
+  | {
+      readonly kind: "unproven";
+      readonly backend: StackBackendName;
+    };
 
 export interface CommandResult {
   exitCode: number;
@@ -135,15 +159,7 @@ export type StackOperation =
   | { kind: "submit"; draft: boolean }
   | { kind: "sync" }
   | { kind: "rebase" }
-  | { kind: "auto-merge"; pullRequest?: string };
-
-export interface StackSnapshot {
-  backend: StackBackendName;
-  repoIdentity?: string;
-  headSha?: string;
-  pullRequest?: string;
-  raw: unknown;
-}
+  | { kind: "auto-merge"; pullRequest: string };
 
 export interface StackActionResult {
   backend: StackBackendName;

@@ -245,7 +245,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     description:
       "Hash local verification, review, and eval artifacts into a receipt for the current repository HEAD.",
     parameters: Type.Object({
-      backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
+      backend: Type.Literal("gh-stack"),
       featureMapPath: Type.String({ minLength: 1 }),
       skillPath: Type.String({ minLength: 1 }),
       reviewPath: Type.String({ minLength: 1 }),
@@ -303,9 +303,9 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     name: "pstack_delivery",
     label: "Run gated pstack delivery",
     description:
-      "Inspect a stack or run a receipt-gated gh-stack or Graphite mutation. Auto-merge also verifies the live PR head and checks.",
+      "Inspect a stack or run a receipt-gated gh-stack mutation. Auto-merge also verifies the live PR head and checks.",
     parameters: Type.Object({
-      backend: Type.Union([Type.Literal("gh-stack"), Type.Literal("graphite")]),
+      backend: Type.Literal("gh-stack"),
       operation: Type.Union([
         Type.Literal("inspect"),
         Type.Literal("prepare"),
@@ -344,8 +344,6 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
             paths.map((path) => loadEvidenceReceipt(path, ctx.cwd)),
           );
           if (params.operation === "auto-merge") {
-            if (params.backend !== "gh-stack")
-              return deliveryRejected("Graphite auto-merge lacks stack-wide receipt verification");
             if (!params.pullRequest)
               return deliveryRejected("auto-merge requires a pull request number");
             const stackResult = await pi.exec("gh", ["stack", "view", "--json"], {
@@ -414,18 +412,8 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
             return { exitCode: result.code, stdout: result.stdout, stderr: result.stderr };
           },
         };
-        const availableCommands = ["gh"];
-        if (params.backend === "graphite") {
-          const gt = await pi.exec("gt", ["--version"], { cwd: ctx.cwd, signal });
-          if (gt.code === 0) availableCommands.push("gt");
-        }
-        const backends = createDeliveryBackends({
-          runner,
-          availableCommands,
-        });
-        const backend = params.backend === "graphite" ? backends.graphite : backends.ghStack;
-        if (!backend)
-          return deliveryRejected("Graphite is unavailable; install and authenticate gt first");
+        const backends = createDeliveryBackends({ runner });
+        const backend = backends.ghStack;
         const operation = deliveryOperation(params);
         const result = await backend.execute(operation);
         return {
@@ -692,6 +680,7 @@ function deliveryOperation(params: {
     case "rebase":
       return { kind: "rebase" };
     case "auto-merge":
+      if (!params.pullRequest) throw new Error("auto-merge requires pull request");
       return { kind: "auto-merge", pullRequest: params.pullRequest };
     default:
       throw new Error(`unsupported delivery operation: ${params.operation}`);

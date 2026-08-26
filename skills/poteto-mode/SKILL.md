@@ -17,9 +17,8 @@ managed worktrees isolate their edits. Resolve models through Pi profiles and
 agent roles, never through provider-specific slugs embedded in a skill.
 
 Delivery resources prepare evidence and receipts only. The default named
-backend is `gh stack`; Graphite is an optional named backend. Executable
-delivery behavior belongs to the later `src/delivery` adapters, not these
-skills.
+backend is `gh stack`. Executable delivery behavior belongs to the later
+`src/delivery` adapters, not these skills.
 
 ## Non-negotiables
 
@@ -139,7 +138,7 @@ A large or cross-cutting effort (a migration across many call sites, an ambitiou
 - **Authoring or modifying a skill.** Writing or editing a SKILL.md. `playbooks/authoring-a-skill.md`.
 - **Eval.** Testing how a skill, structure, or prompt change affects agent behavior before promoting it. `playbooks/eval.md`.
 - **Babysit.** Driving a PR or a stack to merge-ready: conflicts, review threads, CI. `playbooks/babysit.md`.
-- **Shipping.** The half after Babysit. Independently verifying a green stack, then handing the contiguous verified run to the default `gh stack` adapter (Graphite is optional). `playbooks/shipping.md`.
+- **Shipping.** The half after Babysit. Independently verifying a green stack, then handing the contiguous verified run to the `gh stack` adapter. `playbooks/shipping.md`.
 - **Autonomous run.** A long task to drive to completion without stopping ("run until done", "wait until X"). `playbooks/autonomous-run.md`.
 - **Orchestrate.** A standing project handed to one coordinator chat: multi-day, many stacked PRs, dozens to hundreds of subagents, minimal human turns ("run this whole project", "own this migration until it lands"). Distinct from Autonomous run, which drives one task to a predicate; work one agent could finish inside the session's budget routes there, not here, however program-shaped the phrasing sounds. `playbooks/orchestrate.md`.
 - **Autopilot-full.** A queue of independent PRs run to merged with full autonomy: one owner per PR carries build through merge, and the root swarm-verifies each merge-ready head before its owner merges ("autopilot this queue", "full autopilot", one-owner-per-PR programs). `playbooks/autopilot-full.md`.

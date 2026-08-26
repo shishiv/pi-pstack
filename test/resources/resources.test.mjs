@@ -148,7 +148,6 @@ test("active resources use Pi runtime contracts", async () => {
   assert.match(noComments, /agent: "comment-sicko"/);
   assert.match(recall, /PI_SESSION_FILE/);
   assert.match(shipping, /gh stack/);
-  assert.match(shipping, /Graphite/);
 });
 
 test("agent frontmatter uses valid Pi roles", async () => {

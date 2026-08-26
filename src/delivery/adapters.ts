@@ -1,15 +1,30 @@
 import type {
   CommandResult,
   CommandRunner,
+  GitSha,
+  ProvenMembers,
+  PullRequestNumber,
   StackActionResult,
   StackBackend,
   StackBackendName,
+  StackMember,
   StackOperation,
   StackSnapshot,
 } from "./types.js";
 
 export interface AdapterOptions {
   runner: CommandRunner;
+}
+
+const PULL_REQUEST_PATTERN = /^[1-9][0-9]*$/;
+const GIT_SHA_PATTERN = /^[a-f0-9]{6,64}$/i;
+
+function gitSha(value: string): GitSha | undefined {
+  return GIT_SHA_PATTERN.test(value) ? (value as GitSha) : undefined;
+}
+
+function pullRequestNumber(value: string): PullRequestNumber | undefined {
+  return PULL_REQUEST_PATTERN.test(value) ? (value as PullRequestNumber) : undefined;
 }
 
 function parseOutput(result: CommandResult): unknown {
@@ -31,25 +46,55 @@ function field(value: unknown, ...names: string[]): string | undefined {
   return undefined;
 }
 
-function stackFields(value: unknown): Pick<StackSnapshot, "headSha" | "pullRequest"> {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    !Array.isArray((value as { branches?: unknown }).branches)
-  )
-    return {};
-  const snapshot = value as {
-    currentBranch?: unknown;
-    branches: { name?: unknown; head?: unknown; pr?: { url?: unknown } }[];
-  };
-  const current = snapshot.branches.find(
-    (branch) =>
-      typeof snapshot.currentBranch === "string" && branch.name === snapshot.currentBranch,
-  );
-  return {
-    headSha: typeof current?.head === "string" ? current.head : undefined,
-    pullRequest: typeof current?.pr?.url === "string" ? current.pr.url : undefined,
-  };
+function parseGhStackMembership(raw: unknown): ProvenMembers | undefined {
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { branches?: unknown }).branches))
+    return undefined;
+  const entries = (raw as { branches: unknown[] }).branches.flatMap((branch) => {
+    if (!branch || typeof branch !== "object") return [];
+    const item = branch as {
+      head?: unknown;
+      base?: unknown;
+      isMerged?: unknown;
+      pr?: { number?: unknown; state?: unknown };
+    };
+    if (item.isMerged === true || item.pr?.state === "MERGED") return [];
+    const head = typeof item.head === "string" ? gitSha(item.head) : undefined;
+    const base = typeof item.base === "string" ? gitSha(item.base) : undefined;
+    const number = item.pr?.number;
+    if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) return [];
+    const pullRequest = pullRequestNumber(String(number));
+    if (!head || !base || !pullRequest) return [];
+    return [{ pullRequest, headSha: head, baseSha: base }];
+  });
+  if (entries.length === 0) return undefined;
+  const heads = new Map(entries.map((entry) => [entry.headSha, entry]));
+  if (heads.size !== entries.length) return undefined;
+  const roots = entries.filter((entry) => !heads.has(entry.baseSha));
+  if (roots.length !== 1) return undefined;
+  const ordered = [] as StackMember[];
+  const visited = new Set<string>();
+  let current: StackMember | undefined = roots[0];
+  while (current) {
+    if (visited.has(current.headSha)) return undefined;
+    visited.add(current.headSha);
+    ordered.push(current);
+    const children = entries.filter((entry) => entry.baseSha === current!.headSha);
+    if (children.length > 1) return undefined;
+    current = children[0];
+  }
+  if (ordered.length !== entries.length) return undefined;
+  if (ordered.length === 0) return undefined;
+  return ordered as unknown as ProvenMembers;
+}
+
+export function membersThrough(
+  members: ProvenMembers,
+  targetPullRequest: string,
+): ProvenMembers | undefined {
+  if (!PULL_REQUEST_PATTERN.test(targetPullRequest)) return undefined;
+  const target = members.findIndex((member) => member.pullRequest === targetPullRequest);
+  if (target < 0) return undefined;
+  return members.slice(0, target + 1) as unknown as ProvenMembers;
 }
 
 function asCommandFailure(error: unknown): CommandResult {
@@ -75,9 +120,8 @@ function branchOperand(value: string): string {
   return value;
 }
 
-function pullRequestOperand(value: string | undefined): string[] {
-  if (value === undefined) return [];
-  if (!/^[1-9][0-9]*$/.test(value)) throw new Error(`unsafe pull request operand: ${value}`);
+function pullRequestOperand(value: string): string[] {
+  if (!PULL_REQUEST_PATTERN.test(value)) throw new Error(`unsafe pull request operand: ${value}`);
   return [value];
 }
 
@@ -96,17 +140,11 @@ abstract class CliStackBackend implements StackBackend {
   public constructor(protected readonly runner: CommandRunner) {}
 
   public async inspect(): Promise<StackSnapshot> {
-    const argv = this.argv({ kind: "inspect" });
-    const result = await run(this.runner, argv);
-    const raw = parseOutput(result);
-    const stack = this.name === "gh-stack" ? stackFields(raw) : {};
-    return {
-      backend: this.name,
-      repoIdentity: field(raw, "repoIdentity", "repository", "repo", "name"),
-      headSha: stack.headSha ?? field(raw, "headSha", "head_sha", "sha", "oid"),
-      pullRequest: stack.pullRequest ?? field(raw, "pullRequest", "pull_request", "pr", "url"),
-      raw,
-    };
+    const result = await run(this.runner, this.argv({ kind: "inspect" }));
+    if (result.exitCode !== 0) return { kind: "unproven", backend: this.name };
+    const members = parseGhStackMembership(parseOutput(result));
+    if (!members) return { kind: "unproven", backend: this.name };
+    return { kind: "proven", backend: this.name, members };
   }
 
   public async execute(operation: StackOperation): Promise<StackActionResult> {
@@ -153,80 +191,17 @@ export class GhStackBackend extends CliStackBackend {
 
 export const GhStackAdapter = GhStackBackend;
 
-/** Adapter for Graphite's official `gt` CLI. It stores no stack state. */
-export class GraphiteBackend extends CliStackBackend {
-  public readonly name = "graphite" as const;
-
-  protected argv(operation: StackOperation): readonly string[] {
-    switch (operation.kind) {
-      case "inspect":
-        return ["gt", "log", "short", "--stack", "--reverse"];
-      case "prepare":
-        return ["gt", "create", branchOperand(operation.branch), "--no-interactive"];
-      case "submit":
-        return [
-          "gt",
-          "submit",
-          ...(operation.draft ? ["--draft"] : []),
-          ...(operation.draft ? [] : ["--publish"]),
-          "--no-edit",
-          "--no-interactive",
-        ];
-      case "sync":
-        return ["gt", "sync", "--no-interactive"];
-      case "rebase":
-        return ["gt", "restack", "--no-interactive"];
-      case "auto-merge":
-        return [
-          "gt",
-          "submit",
-          "--merge-when-ready",
-          "--always",
-          "--update-only",
-          "--no-edit",
-          "--no-interactive",
-        ];
-    }
-  }
-}
-
-export const GraphiteAdapter = GraphiteBackend;
-
-export function isGraphiteAvailable(
-  availableCommands: readonly (string | { name: string })[],
-): boolean {
-  return availableCommands.some(
-    (command) => (typeof command === "string" ? command : command.name) === "gt",
-  );
-}
-
 export interface DeliveryBackends {
   ghStack: GhStackBackend;
-  graphite?: GraphiteBackend;
 }
 
-/** gh is the default; Graphite is exposed only after a capability preflight. */
 export function createDeliveryBackends(options: {
   runner: CommandRunner;
   availableCommands?: readonly (string | { name: string })[];
 }): DeliveryBackends {
-  const backends: DeliveryBackends = { ghStack: new GhStackBackend(options.runner) };
-  if (options.availableCommands && isGraphiteAvailable(options.availableCommands)) {
-    backends.graphite = new GraphiteBackend(options.runner);
-  }
-  return backends;
+  return { ghStack: new GhStackBackend(options.runner) };
 }
 
 export function createGhStackBackend(options: AdapterOptions): GhStackBackend {
   return new GhStackBackend(options.runner);
-}
-
-/** Returns no adapter when the optional `gt` capability is not present. */
-export function createGraphiteBackend(options: {
-  runner: CommandRunner;
-  availableCommands: readonly (string | { name: string })[];
-}): GraphiteBackend | undefined {
-  return isGraphiteAvailable(options.availableCommands)
-    ? new GraphiteBackend(options.runner)
-    : undefined;
 }
