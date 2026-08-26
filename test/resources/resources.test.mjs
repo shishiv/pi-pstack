@@ -123,6 +123,7 @@ test("active resources use Pi runtime contracts", async () => {
     ["Comment Sicko spawn", /agent: "Comment Sicko"/],
     ["doubled subagent", /subagent subagent/],
     ["create-skill", /create-skill/],
+    ["workspace-boundary leftover", /crosses workspace boundaries/],
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }
