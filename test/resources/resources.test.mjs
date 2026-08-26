@@ -129,6 +129,8 @@ test("active resources use Pi runtime contracts", async () => {
     ["cloud spawns", /cloud spawns/],
     ["cloud work leftover", /cloud work is not/],
     ["loop skill leftover", /the loop skill/],
+    ["four-H2 leftover", /How to get to it \(user POV\)/],
+    ["features README leftover", /features\/README\.md/],
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }

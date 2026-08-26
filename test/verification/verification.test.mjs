@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createJiti } from "jiti";
@@ -37,6 +38,43 @@ test("feature map Markdown round-trips without losing user intent or selectors",
   const parsed = verification.parseFeatureMapMarkdown(markdown);
   assert.deepEqual(parsed, fixture);
   assert.equal(verification.validateFeatureMap(parsed).valid, true);
+});
+
+test("shipped notes example parses, validates, and round-trips ids and goals", async () => {
+  const markdown = await readFile(
+    join(
+      import.meta.dirname,
+      "../../skills/create-verification-skill/references/feature-map-example/feature-map.md",
+    ),
+    "utf8",
+  );
+  const parsed = verification.parseFeatureMapMarkdown(markdown);
+  assert.equal(verification.validateFeatureMap(parsed).valid, true);
+  assert.equal(parsed.app, "notes");
+  assert.deepEqual(
+    parsed.features.map((feature) => feature.id),
+    ["create-note", "search-notes"],
+  );
+  const roundTrip = verification.parseFeatureMapMarkdown(
+    verification.renderFeatureMapMarkdown(parsed),
+  );
+  assert.deepEqual(
+    roundTrip.features.map((feature) => [feature.id, feature.userGoal]),
+    parsed.features.map((feature) => [feature.id, feature.userGoal]),
+  );
+});
+
+test("four-H2 leftover markdown is not a valid feature map", () => {
+  const leftover = [
+    "# Feature map: notes",
+    "",
+    "## Sub-features",
+    "- leftover: yes",
+    "",
+    "## How to get to it (user POV)",
+    "- leftover: yes",
+  ].join("\n");
+  assert.equal(verification.validateFeatureMapMarkdown(leftover).valid, false);
 });
 
 test("validation reports missing required fields and duplicate IDs", () => {
