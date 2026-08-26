@@ -60,7 +60,7 @@ Then proceed to Step 3.
 
 ### Step 2b. Direct Explain (simple questions)
 
-Spawn a single subagent subagent that explores and explains in one pass:
+Spawn a single subagent that explores and explains in one pass:
 
 - `agent`: `oracle`
 - omit `model` to use the configured oracle profile
@@ -71,7 +71,7 @@ Proceed to Step 4.
 
 ### Step 3. Synthesize (complex questions only)
 
-Once all explorers return, spawn a single subagent subagent to synthesize their findings into one coherent explanation:
+Once all explorers return, spawn a single subagent to synthesize their findings into one coherent explanation:
 
 - `agent`: `oracle`
 - omit `model` to use the configured oracle profile

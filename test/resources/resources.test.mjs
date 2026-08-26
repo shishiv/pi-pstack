@@ -120,11 +120,14 @@ test("active resources use Pi runtime contracts", async () => {
     ["symbolic model profile", /profile:(?:fast|reasoning|instruction|review)/],
     ["unsupported subagents.profiles", /subagents\.profiles/],
     ["unsupported read-write acceptance role", /acceptanceRole:\s*read-write/],
+    ["Comment Sicko spawn", /agent: "Comment Sicko"/],
+    ["doubled subagent", /subagent subagent/],
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }
   const mode = await readFile(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
   const how = await readFile(join(skillsDir, "how", "SKILL.md"), "utf8");
+  const noComments = await readFile(join(skillsDir, "no-comments", "SKILL.md"), "utf8");
   const recall = await readFile(join(skillsDir, "recall", "SKILL.md"), "utf8");
   const shipping = await readFile(
     join(skillsDir, "poteto-mode", "playbooks", "shipping.md"),
@@ -133,6 +136,7 @@ test("active resources use Pi runtime contracts", async () => {
   assert.match(mode, /workflowScript/);
   assert.match(how, /runs\.all/);
   assert.match(mode, /\bask\b/);
+  assert.match(noComments, /agent: "comment-sicko"/);
   assert.match(recall, /PI_SESSION_FILE/);
   assert.match(shipping, /gh stack/);
   assert.match(shipping, /Graphite/);
