@@ -62,7 +62,7 @@ export function delegationGuidance(environment: DelegationEnvironment): string {
     return `${PARENT_DELEGATION_REQUIREMENT} ${host} provides the agents tool. Use agents for delegation. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. The host owns agent lifecycle and terminal layout; do not invoke the Herdr CLI from pi-pstack.`;
   }
   if (environment.kind === "herdr-cli") {
-    return `${PARENT_DELEGATION_REQUIREMENT} Herdr CLI is verified in this managed pane. Prefer the host agents capability exposed through exec as tools.agents. If that capability is absent, use documented herdr agent commands. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. Pi-pstack does not own pane or terminal layout.`;
+    return `${PARENT_DELEGATION_REQUIREMENT} Herdr CLI is verified in this managed pane. Prefer the host agents capability exposed through exec as tools.agents. When tools.agents is available through exec, launch independent tasks together with Promise.all, leave blocking at its default true, and use the returned responses. Do not use blocking:false, watch, read, wait, or sleep to collect completion. If that capability is absent, use documented herdr agent commands. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. Pi-pstack does not own pane or terminal layout.`;
   }
   return `${PARENT_DELEGATION_REQUIREMENT} No host agents tool is available. Use pstack_delegate for one isolated Pi child. It provides no scheduler, sandbox, or isolated worktree.`;
 }
