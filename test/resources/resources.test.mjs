@@ -7,8 +7,24 @@ import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 const root = resolve(import.meta.dirname, "../..");
 const skillsDir = join(root, "skills");
 const agentsDir = join(root, "agents");
+const automationsDir = join(root, "automations");
+const docsDir = join(root, "docs");
 const bennyDir = join(root, "automations", "benny");
 const delegationPath = join(root, "docs", "delegation.md");
+const lockfileNames = new Set([
+  "bun.lock",
+  "bun.lockb",
+  "Cargo.lock",
+  "composer.lock",
+  "Gemfile.lock",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "Pipfile.lock",
+  "pnpm-lock.yaml",
+  "poetry.lock",
+  "uv.lock",
+  "yarn.lock",
+]);
 const expectedSkillNames = [
   "architect",
   "arena",
@@ -63,7 +79,7 @@ async function filesUnder(directory) {
     if (entry.name === "node_modules") continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) files.push(...(await filesUnder(path)));
-    else if (entry.isFile()) files.push(path);
+    else if (entry.isFile() && !lockfileNames.has(entry.name)) files.push(path);
   }
   return files;
 }
@@ -100,6 +116,20 @@ test("Pi loads every skill without diagnostics", () => {
   const result = loadSkillsFromDir({ dir: skillsDir, source: "pi-pstack" });
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(result.skills.map((skill) => skill.name).toSorted(), expectedSkillNames);
+});
+
+test("active resources do not use em dashes or en dashes", async () => {
+  const paths = (
+    await Promise.all([skillsDir, agentsDir, automationsDir, docsDir].map(filesUnder))
+  ).flat();
+  for (const path of paths) {
+    const content = await readFile(path, "utf8");
+    assert.doesNotMatch(
+      content,
+      /[—–]/,
+      `${path.slice(root.length + 1)} contains an em dash or en dash`,
+    );
+  }
 });
 
 test("active resources use Pi runtime contracts", async () => {
