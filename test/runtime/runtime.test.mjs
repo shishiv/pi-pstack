@@ -390,7 +390,7 @@ test("verified Herdr CLI uses host delegation when agents is nested under exec",
 
 test("delegation guidance requires the parent to delegate every independent workstream", () => {
   const parentRequirement =
-    /delegation is required[\s\S]*dispatch every requested workstream[\s\S]*collect every result[\s\S]*must not perform/;
+    /delegation is required[\s\S]*dispatch every requested workstream[\s\S]*collect every result[\s\S]*must not perform[\s\S]*automatic completion[\s\S]*do not sleep or repeatedly wait or read[\s\S]*continue other work[\s\S]*consume the completion notification/i;
   for (const environment of [
     { kind: "host-agents", tool: "agents", herdr: false },
     { kind: "herdr-cli", command: "herdr", herdr: true },

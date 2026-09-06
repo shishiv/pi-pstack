@@ -6,7 +6,9 @@ export const PI_DELEGATION_TOOL = "pstack_delegate";
 const PARENT_DELEGATION_REQUIREMENT =
   "When a user explicitly requests independent review, independent analyses, isolated context, or parallel work, delegation is required. " +
   "The parent agent must dispatch every requested workstream and collect every result. " +
-  "The parent agent must not perform any of those workstreams itself.";
+  "The parent agent must not perform any of those workstreams itself. " +
+  "When the host promises automatic completion, do not sleep or repeatedly wait or read for status. " +
+  "Continue other work and consume the completion notification.";
 
 export type DelegationEnvironment =
   | { readonly kind: "host-agents"; readonly tool: "agents"; readonly herdr: boolean }
