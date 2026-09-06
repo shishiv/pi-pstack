@@ -8,18 +8,16 @@ disable-model-invocation: true
 
 ## Pi runtime contract
 
-Delegate through Pi's `subagent` tool. Put multi-step delegation in a
-`workflowScript`, give children stable keys, and use `await runs.all([...])`
-for ordinary parallel work. Set `async: true` when the parent should remain
-available, then observe completion with `subagent_wait`; use Pi schedules for
-recurring work instead of a polling command. Writers use `worktree: true` so
-managed worktrees isolate their edits. Resolve models through Pi profiles and
-agent roles, never through provider-specific slugs embedded in a skill.
+Read [`../../docs/delegation.md`](../../docs/delegation.md) before delegating.
+Use the host's agent or CLI capability in Herdr. In other environments, use
+`pstack_delegate`, the runtime's local Pi subprocess fallback. Launch
+independent work together, and isolate writers in separate worktrees or output
+paths. Resolve models from the active Pi environment instead of embedding
+provider-specific slugs in a skill.
 
-Delivery resources prepare evidence and receipts only. The default named
-backend is `gh stack`; Graphite is an optional named backend. Executable
-delivery behavior belongs to the later `src/delivery` adapters, not these
-skills.
+Delivery resources prepare evidence and receipts only. Delivery is optional and
+uses only an adapter selected by the operator that passes capability preflight.
+Executable delivery behavior belongs to the runtime adapter, not these skills.
 
 ## Non-negotiables
 
@@ -87,7 +85,7 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 
 ## Autonomy
 
-**Just do it.** Use any MCP tool. Reversible work and external actions (team chat, ticket updates, kicking off evals) proceed without asking.
+**Just do it.** Use available Pi tools. Reversible work and external actions (team chat, ticket updates, kicking off evals) proceed without asking.
 
 **Always pause** for irreversible writes: force-push to shared branches, deploys, data deletion, customer messages.
 
@@ -95,13 +93,13 @@ Read the leaf skill in full for any principle you apply. Each entry names when i
 
 **No is an acceptable answer.** Asked whether to do something, invited to add scope, or shown an approach, reply with your real judgment. Decline, push back, or say "this doesn't earn its place" when true. A recommendation is a judgment, not a validation. Agreement is not the default, candor over sycophancy.
 
-## Subagents
+## Delegation
 
-**Use `agent: "poteto-agent"` for any subagent you spawn inside a playbook step** (code-writing delegates, ad-hoc helpers). `/skill:poteto-mode` and `poteto-agent` route through the same wrapper. Routed workflow skills (`how`, `why`, `interrogate`, `pstack-reflect`, `swarm`) set their own `agent` for diverse-model review; respect what the skill prescribes, don't override to `poteto-agent`.
+Use the `poteto-agent` prompt for code-writing delegates and ad-hoc helpers inside a playbook. Routed workflow skills such as `how`, `why`, `interrogate`, `pstack-reflect`, and `swarm` choose their own roles.
 
-**Defaults for every `subagent` call.** Use `async: true` for background work, pass file pointers instead of inlining large context, and choose the Pi agent by job shape. Use `worker` for code, `scout` for local exploration, `researcher` for public research, `reviewer` for independent review, and `oracle` for judgment and synthesis. Omit `model` so the selected agent profile applies. Pass a provider-qualified model only when `/subagents-models` proves it is available and model diversity is part of the task. Run capability preflight before children that need extension tools such as MCP or browser access.
+Pass file pointers instead of inlining large context. Use exploration, research, implementation, review, and judgment roles according to the task. Preflight any browser or external-source tools a delegate needs. Follow the shared delegation contract for host selection, isolation, completion, and model choice.
 
-You own every subagent's work. Review the diff and write your own summary, don't pass through what it said. Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a "done" summary. A second opinion is the same prompt against a different model. Agreement is high-signal.
+You own every delegate's work. Review the diff and write your own summary instead of passing through its report. Start a fresh delegate with consolidated scope when a resumed run may have dropped directives. A second opinion is the same prompt against another available model.
 
 ## Writing the reply
 
@@ -139,7 +137,7 @@ A large or cross-cutting effort (a migration across many call sites, an ambitiou
 - **Authoring or modifying a skill.** Writing or editing a SKILL.md. `playbooks/authoring-a-skill.md`.
 - **Eval.** Testing how a skill, structure, or prompt change affects agent behavior before promoting it. `playbooks/eval.md`.
 - **Babysit.** Driving a PR or a stack to merge-ready: conflicts, review threads, CI. `playbooks/babysit.md`.
-- **Shipping.** The half after Babysit. Independently verifying a green stack, then handing the contiguous verified run to the default `gh stack` adapter (Graphite is optional). `playbooks/shipping.md`.
+- **Shipping.** The half after Babysit. Independently verifying a green stack, then handing the contiguous verified run to the selected available delivery adapter. `playbooks/shipping.md`.
 - **Autonomous run.** A long task to drive to completion without stopping ("run until done", "wait until X"). `playbooks/autonomous-run.md`.
 - **Orchestrate.** A standing project handed to one coordinator chat: multi-day, many stacked PRs, dozens to hundreds of subagents, minimal human turns ("run this whole project", "own this migration until it lands"). Distinct from Autonomous run, which drives one task to a predicate; work one agent could finish inside the session's budget routes there, not here, however program-shaped the phrasing sounds. `playbooks/orchestrate.md`.
 - **Autopilot-full.** A queue of independent PRs run to merged with full autonomy: one owner per PR carries build through merge, and the root swarm-verifies each merge-ready head before its owner merges ("autopilot this queue", "full autopilot", one-owner-per-PR programs). `playbooks/autopilot-full.md`.

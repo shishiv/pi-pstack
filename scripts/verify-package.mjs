@@ -18,16 +18,12 @@ assert.equal(manifest.private, true);
 assert.equal(manifest.type, "module");
 assert.deepEqual(manifest.pi.extensions, ["./extensions"]);
 assert.deepEqual(manifest.pi.skills, ["./skills"]);
-assert.deepEqual(manifest.pi.subagents.agents, ["./agents"]);
 assert.equal(
   manifest.peerDependencies["@earendil-works/pi-coding-agent"],
   `>=${packageContract.piVersionFloor}`,
 );
-const upstream = await readFile(join(root, "UPSTREAM.md"), "utf8");
-assert.match(upstream, new RegExp(packageContract.upstream.commit));
-assert.match(upstream, new RegExp(packageContract.upstream.version.replaceAll(".", "\\.")));
 
-for (const relativePath of ["extensions", "skills", "agents"]) {
+for (const relativePath of ["extensions", "skills"]) {
   assert.equal((await stat(join(root, relativePath))).isDirectory(), true);
 }
 

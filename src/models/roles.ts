@@ -43,8 +43,7 @@ function sameModel(a: PiModel, b: PiModel): boolean {
 
 function findSelector(selector: string, models: readonly PiModel[]): PiModel | undefined {
   const normalized = selector.trim().toLowerCase();
-  if (!normalized || normalized.startsWith("cursor/") || normalized.includes("cursor-"))
-    return undefined;
+  if (!normalized) return undefined;
   const qualified = normalized.includes("/") ? normalized.split("/") : undefined;
   const matches = models.filter((model) => {
     const id = model.id.toLowerCase();

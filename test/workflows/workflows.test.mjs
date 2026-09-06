@@ -7,85 +7,115 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const workflows = await jiti.import("../../src/workflows/delegation.ts");
-const evidence = await jiti.import("../../src/workflows/evidence.ts");
 const sessions = await jiti.import("../../src/workflows/sessions.ts");
-const wake = await jiti.import("../../src/workflows/wake.ts");
 
-test("semantic roles map to Pi agents and preserve read-only boundaries", () => {
-  assert.equal(workflows.agentForRole("explore"), "scout");
-  assert.equal(workflows.agentForRole("research"), "researcher");
-  assert.equal(workflows.agentForRole("implement"), "worker");
-  assert.equal(workflows.agentForRole("review"), "reviewer");
-  assert.equal(workflows.agentForRole("judge"), "oracle");
-  assert.equal(workflows.agentForRole("style"), "poteto-agent");
-  assert.equal(workflows.agentForRole("benny"), "benny-coordinator");
-  for (const role of ["explore", "research", "review", "judge"]) {
-    assert.notEqual(workflows.agentForRole(role, { readOnly: true }), "worker");
-    assert.notEqual(workflows.agentForRole(role, { readOnly: true }), "poteto-agent");
-  }
-  assert.throws(() => workflows.agentForRole("implement", { readOnly: true }), /read-only/);
-});
-
-test("workflow builders emit supported, awaited APIs and safely serialized input", () => {
-  const hostile = 'line"; return runs.run("evil", {agent:"worker"}); //';
-  const one = workflows.buildSingleChildWorkflowScript({
-    key: "single",
+test("delegation tasks preserve semantic roles and derive access", () => {
+  const inspect = workflows.createDelegationTask({
+    role: "review",
+    task: "Review the diff",
+  });
+  const change = workflows.createDelegationTask({
     role: "implement",
-    task: hostile,
+    task: "Implement the fix",
+    cwd: "/tmp/worktree",
     model: "provider/model",
   });
-  assert.match(one, /^return runs\.run\("single",\{agent:"worker",task:/);
-  assert.match(one, /model:"provider\/model"/);
-  assert.match(one, /await|return runs\.run/);
-  assert.doesNotMatch(one, /evil", \{agent/);
-  assert.doesNotThrow(() => workflows.validateWorkflowScript(one));
-
-  const sequence = workflows.buildSequentialHandoffWorkflowScript([
-    { key: "inspect", role: "explore", task: "Inspect" },
-    { key: "change", role: "implement", task: "Change from handoff" },
-  ]);
-  assert.match(sequence, /await runs\.run\("inspect"/);
-  assert.match(sequence, /await runs\.run\("change"/);
-  assert.match(sequence, /first\.output/);
-  assert.doesNotMatch(sequence, /async function|async \(/);
-  assert.doesNotThrow(() => workflows.validateWorkflowScript(sequence));
-
-  const parallel = workflows.buildParallelFanoutWorkflowScript([
-    { key: "a", role: "review", task: "A" },
-    { key: "b", role: "judge", task: "B" },
-  ]);
-  assert.match(parallel, /await runs\.all\(\[/);
-  assert.match(parallel, /key:"a"/);
-  assert.match(parallel, /key:"b"/);
-  assert.doesNotMatch(parallel, /runs\.run\(/);
-  assert.doesNotThrow(() => workflows.validateWorkflowScript(parallel));
+  assert.deepEqual(inspect, {
+    role: "review",
+    task: "Review the diff",
+  });
+  assert.equal(workflows.delegationAccess(inspect.role), "read-only");
+  assert.equal(workflows.delegationAccess(change.role), "workspace-write");
+  assert.equal(change.cwd, "/tmp/worktree");
+  assert.equal(change.model, "provider/model");
   assert.throws(
-    () =>
-      workflows.buildSingleChildWorkflowScript({
-        key: "unsafe",
-        role: "implement",
-        task: "work",
-        worktree: "false,task:'injected'",
-      }),
-    /worktree must be boolean/,
+    () => workflows.createDelegationTask({ role: "explore", task: "  " }),
+    /must not be empty/,
   );
 });
 
-test("evidence mapping keeps unavailable MCP categories as explicit gaps", () => {
-  const result = evidence.mapEvidenceSources({
-    availableMcps: ["linear", "slack"],
+test("Pi CLI arguments enforce read-only tools without claiming isolation", () => {
+  const inspect = workflows.createDelegationTask({
+    role: "explore",
+    task: "Inspect",
   });
-  assert.equal(
-    result.sources.find((source) => source.category === "issue-tracker")?.status,
-    "available",
-  );
-  assert.equal(
-    result.sources.find((source) => source.category === "real-time-chat")?.status,
-    "available",
-  );
-  assert.ok(result.gaps.some((gap) => /long-form documents/i.test(gap)));
-  assert.ok(result.gaps.some((gap) => /error tracking/i.test(gap)));
-  assert.equal(result.sources.length, evidence.EVIDENCE_CATEGORIES.length);
+  const args = workflows.buildPiCliArguments(inspect, {
+    model: "provider/model",
+    thinkingLevel: "high",
+  });
+  assert.deepEqual(args.slice(0, 4), ["--mode", "json", "-p", "--no-session"]);
+  assert.ok(args.includes("read,grep,find,ls"));
+  assert.ok(args.includes("provider/model"));
+  assert.match(args.at(-1), /Do not edit files or perform external writes/);
+  assert.doesNotMatch(args.join(" "), /sandbox|worktree/i);
+});
+
+test("Pi CLI execution requires a clean exit and final assistant message", async () => {
+  const task = workflows.createDelegationTask({
+    role: "review",
+    task: "Review",
+  });
+  const script = [
+    'console.log(JSON.stringify({type:"session",id:"child-session"}));',
+    'console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[{type:"text",text:"reviewed"}],model:"provider/model",stopReason:"stop"}}));',
+  ].join("");
+  const result = await workflows.runPiDelegation(task, {
+    cwd: process.cwd(),
+    invocation: { command: process.execPath, prefixArgs: ["-e", script, "--"] },
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.output, "reviewed");
+  assert.deepEqual(result.evidence, {
+    executor: "pi-cli",
+    exitCode: 0,
+    finalMessage: true,
+    outputTruncated: false,
+    sessionId: "child-session",
+    model: "provider/model",
+    stopReason: "stop",
+  });
+});
+
+test("Pi CLI execution reports failure and cancellation distinctly", async () => {
+  const task = workflows.createDelegationTask({ role: "implement", task: "Work" });
+  const unfinished = await workflows.runPiDelegation(task, {
+    cwd: process.cwd(),
+    invocation: {
+      command: process.execPath,
+      prefixArgs: [
+        "-e",
+        'console.log(JSON.stringify({type:"message_end",message:{role:"assistant",content:[],stopReason:"toolUse"}}))',
+        "--",
+      ],
+    },
+  });
+  assert.equal(unfinished.status, "failed");
+  assert.match(unfinished.error, /toolUse/);
+
+  const failed = await workflows.runPiDelegation(task, {
+    cwd: process.cwd(),
+    invocation: {
+      command: process.execPath,
+      prefixArgs: ["-e", 'process.stderr.write("boom"); process.exit(3)', "--"],
+    },
+  });
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.evidence.exitCode, 3);
+  assert.match(failed.error, /boom/);
+
+  const controller = new AbortController();
+  const pending = workflows.runPiDelegation(task, {
+    cwd: process.cwd(),
+    signal: controller.signal,
+    invocation: {
+      command: process.execPath,
+      prefixArgs: ["-e", "setInterval(() => {}, 1000)", "--"],
+    },
+  });
+  setTimeout(() => controller.abort(), 25);
+  const cancelled = await pending;
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.evidence.finalMessage, false);
 });
 
 test("session discovery stays inside the active project and parses only supplied JSONL", async () => {
@@ -160,20 +190,4 @@ test("session discovery rejects a project-slug JSONL basename outside Pi's sessi
     sessions.discoverSessionFiles({ piSessionFile: impostor, projectDirectory: project }),
     [],
   );
-});
-
-test("long-run plans choose a native wake mechanism instead of polling", () => {
-  assert.deepEqual(wake.planLongRunWake({ childRunId: "run-1" }), {
-    mechanism: "async-child-wait",
-    childRunId: "run-1",
-  });
-  assert.deepEqual(wake.planLongRunWake({ event: "ci.completed" }), {
-    mechanism: "event-subscription",
-    event: "ci.completed",
-  });
-  assert.deepEqual(wake.planLongRunWake({ schedule: "+30m" }), {
-    mechanism: "schedule",
-    schedule: "+30m",
-  });
-  assert.throws(() => wake.planLongRunWake({}), /childRunId, event, or schedule/);
 });

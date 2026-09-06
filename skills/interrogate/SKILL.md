@@ -33,20 +33,20 @@ Write one clear paragraph. Reviewers challenge whether the work achieves the int
 
 ## Step 3, Spawn Reviewers
 
-Launch all reviewers in one `workflowScript` with `runs.all`. Inspect `/subagents-models` when explicit model diversity is required. Extend or shrink the Reviewer A/B/C/D labels below to the available independent reviewers; otherwise use the table defaults and their configured agent profiles.
+Follow [`../../docs/delegation.md`](../../docs/delegation.md) and launch all reviewers together. Inspect the models reported by the host when explicit model diversity is required. Extend or shrink the Reviewer A/B/C/D labels below to the available independent reviewers.
 
-| Subagent | Default Pi agent |
-|----------|------------------|
-| Reviewer A | `reviewer` |
-| Reviewer B | `oracle` |
-| Reviewer C | `reviewer` with a distinct available model |
-| Reviewer D | `oracle` with a distinct available model |
+| Reviewer | Role |
+|----------|------|
+| Reviewer A | review |
+| Reviewer B | judgment |
+| Reviewer C | review with a distinct available model |
+| Reviewer D | judgment with a distinct available model |
 
 For each reviewer:
-- `agent`: the table entry
-- `model`: omit it for the configured agent profile, or use a provider-qualified ID proven by `/subagents-models`
+- role: the table entry
+- model: omit it to use the active model, or use a provider-qualified ID reported by the host
 
-If a model slug is rejected as unresolvable when you try to spawn the subagent, check the valid slugs in the subagent tool's error message, pick the closest equivalent (prefer the highest-reasoning tier of the same family), spawn with the valid slug, and open a separate PR to update the configured value or default table. Do not block the review on the slug issue. If the configured value is `inherit-parent` or `auto`, omit `model` instead; never treat those aliases as broken slugs or enter this fallback for them.
+If an explicit model is unavailable, use another model reported by the host or omit the model choice. Do not invent an identifier or block the review on model diversity alone.
 
 Read `references/reviewer-prompt.md` and fill in the template with:
 1. The stated intent

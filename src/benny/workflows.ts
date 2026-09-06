@@ -1,10 +1,10 @@
-import { buildSingleChildWorkflowScript, validateWorkflowScript } from "../workflows/delegation.js";
+import { createDelegationTask, type DelegationTask } from "../workflows/delegation.js";
 import type { BennyConfig } from "./types.js";
 
 export interface BennyScheduleWorkflow {
   readonly name: "benny-triage" | "benny-reproduce";
   readonly every: string;
-  readonly workflowScript: string;
+  readonly task: DelegationTask;
   readonly polling: "schedule-wake";
   readonly overlap: "skip";
   readonly catchUp: "latest";
@@ -13,20 +13,16 @@ export interface BennyScheduleWorkflow {
   readonly draftOnly: true;
 }
 
-const triageScript = buildSingleChildWorkflowScript({
-  key: "triage-coordinator",
+const triageTask = createDelegationTask({
   role: "benny",
   task: "Read .pi/pstack/benny/skills/triage-issue-reports/SKILL.md and the approved configuration, then call pstack_benny once with action triage and the configured adapter provider. The provider polls one event; the tool owns the durable ledger and external writes.",
 });
-const reproduceScript = buildSingleChildWorkflowScript({
-  key: "reproduce-coordinator",
+const reproduceTask = createDelegationTask({
   role: "benny",
   task: "Read .pi/pstack/benny/skills/reproduce-and-fix-issues/SKILL.md and the approved configuration, then call pstack_benny once with action reproduce, the configured adapter provider, and an explicit featureId. The provider polls one trusted marker; the tool enforces two observations and draft-only delivery.",
 });
-validateWorkflowScript(triageScript);
-validateWorkflowScript(reproduceScript);
 
-/** Schedules wake a fresh coordinator; no workflow contains a nested polling loop. */
+/** Describe a fresh coordinator task for a host-owned scheduler. */
 function scheduleInterval(pollSeconds: number): string {
   if (!Number.isInteger(pollSeconds) || pollSeconds <= 0)
     throw new Error("Benny pollSeconds must be a positive integer");
@@ -39,7 +35,7 @@ function buildWorkflows(pollSeconds: number): readonly BennyScheduleWorkflow[] {
     Object.freeze({
       name: "benny-triage" as const,
       every,
-      workflowScript: triageScript,
+      task: triageTask,
       polling: "schedule-wake" as const,
       overlap: "skip" as const,
       catchUp: "latest" as const,
@@ -50,7 +46,7 @@ function buildWorkflows(pollSeconds: number): readonly BennyScheduleWorkflow[] {
     Object.freeze({
       name: "benny-reproduce" as const,
       every,
-      workflowScript: reproduceScript,
+      task: reproduceTask,
       polling: "schedule-wake" as const,
       overlap: "skip" as const,
       catchUp: "latest" as const,

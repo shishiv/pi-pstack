@@ -8,6 +8,7 @@ const root = resolve(import.meta.dirname, "../..");
 const skillsDir = join(root, "skills");
 const agentsDir = join(root, "agents");
 const bennyDir = join(root, "automations", "benny");
+const delegationPath = join(root, "docs", "delegation.md");
 const expectedSkillNames = [
   "architect",
   "arena",
@@ -114,40 +115,45 @@ test("active resources use Pi runtime contracts", async () => {
     ["run_in_background", /run_in_background/],
     ["subagent_type", /subagent_type/],
     ["generalPurpose", /generalPurpose/],
-    [".cursor", /\.cursor/],
-    ["Cursor runtime", /\bCursor\b/],
     ["/loop", /\/loop\b/],
     ["symbolic model profile", /profile:(?:fast|reasoning|instruction|review)/],
     ["unsupported subagents.profiles", /subagents\.profiles/],
     ["unsupported read-write acceptance role", /acceptanceRole:\s*read-write/],
+    ["provider workflow script", /workflowScript|runs\.(?:all|run)/],
+    ["provider wait command", /subagent_wait/],
+    ["provider profile command", /\/subagents-/],
+    ["delegation package", /pi-subagents/],
+    ["source transport", /\bMCPs?\b|pi-mcp-adapter/],
+    ["local proxy requirement", /\bportless\b/],
   ]) {
     assert.doesNotMatch(corpus, pattern, `${token} remains in active resources`);
   }
-  const mode = await readFile(join(skillsDir, "poteto-mode", "SKILL.md"), "utf8");
-  const how = await readFile(join(skillsDir, "how", "SKILL.md"), "utf8");
   const recall = await readFile(join(skillsDir, "recall", "SKILL.md"), "utf8");
   const shipping = await readFile(
     join(skillsDir, "poteto-mode", "playbooks", "shipping.md"),
     "utf8",
   );
-  assert.match(mode, /workflowScript/);
-  assert.match(how, /runs\.all/);
-  assert.match(mode, /\bask\b/);
+  const delegation = await readFile(delegationPath, "utf8");
+  assert.match(delegation, /HERDR_ENV/);
+  assert.match(delegation, /herdr pane current --current/);
+  assert.match(delegation, /pstack_delegate/);
+  assert.match(delegation, /required `task` and `role`/);
+  assert.match(delegation, /local Pi subprocess fallback/);
+  assert.doesNotMatch(delegation, /pstack_delegate[^\n]*sandbox|sandbox[^\n]*pstack_delegate/i);
   assert.match(recall, /PI_SESSION_FILE/);
-  assert.match(shipping, /gh stack/);
-  assert.match(shipping, /Graphite/);
+  assert.match(shipping, /selected delivery adapter/);
+  assert.match(shipping, /capability preflight/);
 });
 
-test("agent frontmatter uses valid Pi roles", async () => {
+test("agent prompts keep dispatch policy outside frontmatter", async () => {
   const comment = await readFile(join(agentsDir, "comment-sicko.md"), "utf8");
   const benny = await readFile(join(agentsDir, "benny-coordinator.md"), "utf8");
   const poteto = await readFile(join(agentsDir, "poteto-agent.md"), "utf8");
   assert.match(comment, /name: comment-sicko/);
-  assert.match(comment, /acceptanceRole: read-only/);
   assert.match(comment, /never edit files/i);
   assert.match(benny, /tools: read, grep, find, ls, pstack_benny/);
   assert.doesNotMatch(benny, /pstack_delivery/);
-  assert.match(poteto, /async: true/);
-  assert.match(poteto, /inheritProjectContext: true/);
-  assert.match(poteto, /inheritSkills: true/);
+  for (const prompt of [comment, benny, poteto]) {
+    assert.doesNotMatch(prompt, /^(?:acceptanceRole|async|inheritProjectContext|inheritSkills):/m);
+  }
 });

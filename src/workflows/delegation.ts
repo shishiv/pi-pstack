@@ -1,146 +1,287 @@
-/** Pi-native delegation primitives. Scripts are data: callers can inspect them before launch. */
+import { spawn } from "node:child_process";
+import { basename, resolve as resolvePath } from "node:path";
 
-export const ROLE_TO_AGENT = {
-  explore: "scout",
-  research: "researcher",
-  implement: "worker",
-  review: "reviewer",
-  judge: "oracle",
-  style: "poteto-agent",
-  benny: "benny-coordinator",
-} as const;
+export const DELEGATION_ROLES = [
+  "explore",
+  "research",
+  "implement",
+  "review",
+  "judge",
+  "style",
+  "benny",
+] as const;
 
-export type WorkflowRole = keyof typeof ROLE_TO_AGENT;
-export type WorkflowAgent = (typeof ROLE_TO_AGENT)[WorkflowRole];
+export type DelegationRole = (typeof DELEGATION_ROLES)[number];
+export type DelegationAccess = "read-only" | "workspace-write";
 
-const KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const READ_ONLY_ROLES = new Set<DelegationRole>(["explore", "research", "review", "judge"]);
+const READ_ONLY_TOOLS = "read,grep,find,ls";
+const CHILD_PROCESS_MARKER = "PSTACK_DELEGATION_CHILD";
 
-export interface AgentResolutionOptions {
-  readOnly?: boolean;
+export interface DelegationTask {
+  readonly role: DelegationRole;
+  readonly task: string;
+  readonly cwd?: string;
+  readonly model?: string;
 }
 
-/** Resolve only named Pi agents; read-only work cannot silently become a writer. */
-export function agentForRole(
-  role: WorkflowRole,
-  options: AgentResolutionOptions = {},
-): WorkflowAgent {
-  const agent = ROLE_TO_AGENT[role];
-  if (
-    options.readOnly &&
-    (agent === "worker" || agent === "poteto-agent" || agent === "benny-coordinator")
-  ) {
-    throw new Error(`Role '${role}' cannot be resolved for a read-only workflow.`);
-  }
-  return agent;
-}
-
-export interface ChildTask {
-  key: string;
+export interface DelegationTaskInput {
+  role: DelegationRole;
   task: string;
-  role?: WorkflowRole;
-  agent?: WorkflowAgent;
+  cwd?: string;
   model?: string;
-  worktree?: boolean;
-  readOnly?: boolean;
 }
 
-function quote(value: string): string {
-  const encoded = JSON.stringify(value);
-  if (encoded === undefined) throw new Error("Workflow task must be a string.");
-  // Keep generated JavaScript safe when a task originated in a JSON or HTML context.
-  return encoded.replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+export interface DelegationEvidence {
+  readonly executor: "pi-cli";
+  readonly exitCode: number | null;
+  readonly finalMessage: boolean;
+  readonly outputTruncated: boolean;
+  readonly sessionId?: string;
+  readonly model?: string;
+  readonly stopReason?: string;
+  readonly stderr?: string;
 }
 
-function validateKey(key: string): void {
-  if (!KEY_PATTERN.test(key)) {
-    throw new Error(`Invalid workflow key '${key}'. Keys must start with a letter or number.`);
-  }
-}
-
-function childAgent(child: ChildTask): WorkflowAgent {
-  if (child.role) {
-    const resolved = agentForRole(child.role, { readOnly: child.readOnly });
-    if (child.agent && child.agent !== resolved) {
-      throw new Error(`Agent '${child.agent}' does not match role '${child.role}'.`);
+export type DelegationResult =
+  | {
+      readonly status: "completed";
+      readonly output: string;
+      readonly evidence: DelegationEvidence;
     }
-    return resolved;
-  }
-  const agent = child.agent ?? "worker";
-  if (
-    child.readOnly &&
-    (agent === "worker" || agent === "poteto-agent" || agent === "benny-coordinator")
-  ) {
-    throw new Error("A read-only workflow cannot use worker or poteto-agent.");
-  }
-  return agent;
+  | {
+      readonly status: "failed" | "cancelled";
+      readonly error: string;
+      readonly output: string;
+      readonly evidence: DelegationEvidence;
+    };
+
+export interface PiInvocation {
+  command: string;
+  prefixArgs: readonly string[];
 }
 
-function runParams(child: ChildTask, taskExpression = quote(child.task)): string {
-  validateKey(child.key);
-  const agent = childAgent(child);
-  const fields = [`agent:${quote(agent)}`, `task:${taskExpression}`];
-  if (child.model !== undefined) fields.push(`model:${quote(child.model)}`);
-  if (child.worktree !== undefined) {
-    if (typeof child.worktree !== "boolean") throw new Error("worktree must be boolean");
-    fields.push(`worktree:${child.worktree ? "true" : "false"}`);
-  }
-  return `{${fields.join(",")}}`;
+export interface RunPiDelegationOptions {
+  cwd: string;
+  signal?: AbortSignal;
+  model?: string;
+  thinkingLevel?: string;
+  env?: NodeJS.ProcessEnv;
+  invocation?: PiInvocation;
 }
 
-function uniqueKeys(children: readonly ChildTask[]): void {
-  const keys = new Set<string>();
-  for (const child of children) {
-    validateKey(child.key);
-    if (!keys.add(child.key)) throw new Error(`Duplicate workflow key '${child.key}'.`);
-  }
-}
+const MAX_MODEL_OUTPUT = 64 * 1024;
+const MAX_STDERR = 16 * 1024;
 
-/** Build a supported one-child workflowScript body. */
-export function buildSingleChildWorkflowScript(child: ChildTask): string {
-  return `return runs.run(${quote(child.key)},${runParams(child)});`;
-}
-
-/** Build a sequential handoff where each child receives the prior child's output. */
-export function buildSequentialHandoffWorkflowScript(children: readonly ChildTask[]): string {
-  if (children.length < 2) throw new Error("Sequential handoff requires at least two children.");
-  uniqueKeys(children);
-  const lines: string[] = [];
-  children.forEach((child, index) => {
-    const variable = index === 0 ? "first" : `step${index}`;
-    const task =
-      index === 0
-        ? quote(child.task)
-        : `[${quote(child.task)},"\\n\\nHandoff from previous child:\\n",${index === 1 ? "first" : `step${index - 1}`}.output].join("")`;
-    lines.push(`const ${variable}=await runs.run(${quote(child.key)},${runParams(child, task)});`);
+export function createDelegationTask(input: DelegationTaskInput): DelegationTask {
+  const task = input.task.trim();
+  if (!task) throw new Error("Delegation task must not be empty.");
+  return Object.freeze({
+    role: input.role,
+    task,
+    ...(input.cwd ? { cwd: input.cwd } : {}),
+    ...(input.model ? { model: input.model } : {}),
   });
-  lines.push(`return step${children.length - 1};`);
-  return lines.join("\n");
 }
 
-/** Build an ordinary parallel fanout. Every launch is observed by the awaited runs.all call. */
-export function buildParallelFanoutWorkflowScript(children: readonly ChildTask[]): string {
-  if (children.length === 0) throw new Error("Parallel fanout requires at least one child.");
-  uniqueKeys(children);
-  const calls = children.map((child) => `{key:${quote(child.key)},${runParams(child).slice(1)}`);
-  return `const results=await runs.all([${calls.join(",")}]);return results;`;
+export function delegationAccess(role: DelegationRole): DelegationAccess {
+  return READ_ONLY_ROLES.has(role) ? "read-only" : "workspace-write";
 }
 
-/** Syntax and portability checks for generated script bodies (without launching children). */
-export function validateWorkflowScript(script: string): void {
-  if (!script.trim()) throw new Error("Workflow script must not be empty.");
-  if (/async\s+(?:function|\([^)]*\)|[A-Za-z_$][\w$]*\s*=>)/.test(script)) {
-    throw new Error("Workflow script must not contain nested async helpers.");
+export function buildPiCliArguments(
+  task: DelegationTask,
+  options: Pick<RunPiDelegationOptions, "model" | "thinkingLevel"> = {},
+): string[] {
+  const args = ["--mode", "json", "-p", "--no-session"];
+  const model = task.model ?? options.model;
+  if (model) args.push("--model", model);
+  if (options.thinkingLevel) args.push("--thinking", options.thinkingLevel);
+  const access = delegationAccess(task.role);
+  if (access === "read-only") {
+    args.push("--tools", READ_ONLY_TOOLS);
+  } else {
+    args.push("--exclude-tools", "pstack_delegate");
   }
-  if (/\b(?:setInterval|setTimeout)\s*\(/.test(script)) {
-    throw new Error("Workflow script must not poll or schedule ad hoc timers.");
+  const accessInstruction =
+    access === "read-only"
+      ? "Inspect and report only. Do not edit files or perform external writes."
+      : "Work in the supplied directory. No sandbox or isolated worktree is provided.";
+  args.push(`Delegated ${task.role} task. ${accessInstruction}\n\n${task.task}`);
+  return args;
+}
+
+export async function runPiDelegation(
+  task: DelegationTask,
+  options: RunPiDelegationOptions,
+): Promise<DelegationResult> {
+  const invocation = options.invocation ?? currentPiInvocation();
+  const args = [...invocation.prefixArgs, ...buildPiCliArguments(task, options)];
+  const env = {
+    ...process.env,
+    ...options.env,
+    [CHILD_PROCESS_MARKER]: "1",
+  };
+
+  return new Promise((resolve) => {
+    const child = spawn(invocation.command, args, {
+      cwd: resolvePath(options.cwd, task.cwd ?? "."),
+      env,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdoutBuffer = "";
+    let stderr = "";
+    let output = "";
+    let outputTruncated = false;
+    let finalMessage = false;
+    let sessionId: string | undefined;
+    let model: string | undefined;
+    let stopReason: string | undefined;
+    let cancelled = options.signal?.aborted === true;
+    let settled = false;
+    let killTimer: NodeJS.Timeout | undefined;
+
+    const processLine = (line: string): void => {
+      if (!line.trim()) return;
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      const event = value as Record<string, unknown>;
+      if (event.type === "session" && typeof event.id === "string") sessionId = event.id;
+      if (event.type !== "message_end" || !event.message || typeof event.message !== "object")
+        return;
+      const message = event.message as Record<string, unknown>;
+      if (message.role !== "assistant") return;
+      finalMessage = true;
+      if (typeof message.model === "string") model = message.model;
+      if (typeof message.stopReason === "string") stopReason = message.stopReason;
+      const text = messageText(message.content);
+      if (text) output = text;
+    };
+
+    const abort = (): void => {
+      cancelled = true;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (child.exitCode === null) child.kill("SIGKILL");
+      }, 5_000);
+      killTimer.unref();
+    };
+
+    const finish = (exitCode: number | null, processError?: Error): void => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
+      options.signal?.removeEventListener("abort", abort);
+      if (stdoutBuffer.trim()) processLine(stdoutBuffer);
+      const bounded = boundText(output, MAX_MODEL_OUTPUT);
+      output = bounded.text;
+      outputTruncated = bounded.truncated;
+      const evidence: DelegationEvidence = {
+        executor: "pi-cli",
+        exitCode,
+        finalMessage,
+        outputTruncated,
+        ...(sessionId ? { sessionId } : {}),
+        ...(model ? { model } : {}),
+        ...(stopReason ? { stopReason } : {}),
+        ...(stderr ? { stderr } : {}),
+      };
+      if (cancelled) {
+        resolve({ status: "cancelled", error: "Pi delegation was cancelled.", output, evidence });
+        return;
+      }
+      if (processError) {
+        resolve({ status: "failed", error: processError.message, output, evidence });
+        return;
+      }
+      if (exitCode !== 0) {
+        resolve({
+          status: "failed",
+          error: stderr || `Pi delegation exited with code ${exitCode ?? "unknown"}.`,
+          output,
+          evidence,
+        });
+        return;
+      }
+      if (!finalMessage) {
+        resolve({
+          status: "failed",
+          error: "Pi delegation exited without a final assistant message.",
+          output,
+          evidence,
+        });
+        return;
+      }
+      if (stopReason !== "stop") {
+        resolve({
+          status: stopReason === "aborted" ? "cancelled" : "failed",
+          error: `Pi delegation did not reach a final stop (reason: ${stopReason ?? "missing"}).`,
+          output,
+          evidence,
+        });
+        return;
+      }
+      resolve({ status: "completed", output, evidence });
+    };
+
+    child.stdout.on("data", (chunk: Buffer | string) => {
+      stdoutBuffer += chunk.toString();
+      while (true) {
+        const newline = stdoutBuffer.indexOf("\n");
+        if (newline < 0) break;
+        const line = stdoutBuffer.slice(0, newline).replace(/\r$/, "");
+        stdoutBuffer = stdoutBuffer.slice(newline + 1);
+        processLine(line);
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderr = boundText(stderr + chunk.toString(), MAX_STDERR).text;
+    });
+    child.once("error", (error) => finish(null, error));
+    child.once("close", (code) => finish(code));
+    if (cancelled) abort();
+    else options.signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+export function isDelegatedPiChild(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return env[CHILD_PROCESS_MARKER] === "1";
+}
+
+function currentPiInvocation(): PiInvocation {
+  const currentScript = process.argv[1];
+  if (currentScript && !currentScript.startsWith("/$bunfs/root/")) {
+    return { command: process.execPath, prefixArgs: [currentScript] };
   }
-  try {
-    // Wrapping permits top-level await while checking ordinary JavaScript syntax.
-    // eslint-disable-next-line no-new-func
-    new Function(`return (async()=>{${script}\n})();`);
-  } catch (error) {
-    throw new Error(
-      `Invalid workflowScript: ${error instanceof Error ? error.message : String(error)}`,
-    );
+  const executable = basename(process.execPath).toLowerCase();
+  if (!/^(node|bun)(\.exe)?$/.test(executable)) {
+    return { command: process.execPath, prefixArgs: [] };
   }
+  return { command: "pi", prefixArgs: [] };
+}
+
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((part) => {
+      if (!part || typeof part !== "object") return [];
+      const block = part as Record<string, unknown>;
+      return block.type === "text" && typeof block.text === "string" ? [block.text] : [];
+    })
+    .join("\n");
+}
+
+function boundText(value: string, limit: number): { text: string; truncated: boolean } {
+  if (Buffer.byteLength(value, "utf8") <= limit) return { text: value, truncated: false };
+  let text = value;
+  while (text && Buffer.byteLength(text, "utf8") > limit) text = text.slice(0, -1);
+  return { text, truncated: true };
 }

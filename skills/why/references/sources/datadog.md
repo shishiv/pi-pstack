@@ -16,7 +16,7 @@ Datadog answers "what was the production reality around the time this code was w
 
 ## How to search it
 
-Use the Datadog MCP. Start broad, then narrow.
+Use the available read-only Datadog tool. Start broad, then narrow.
 
 1. **Identify the owning service(s).**
 

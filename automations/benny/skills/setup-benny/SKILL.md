@@ -10,13 +10,13 @@ Benny ships as a dormant automation pack inside pstack. The Pi package manifest 
 
 The human enters setup by pointing Pi at the pack's `FOR_AGENTS.md`. The bootstrap flow copies the whole pack into the target repository, then reads this file directly at `.pi/pstack/benny/skills/setup-benny/SKILL.md`.
 
-Benny needs external configuration and two live Pi scheduled workflows.
+Benny needs external configuration and two runnable operations. Scheduling is optional.
 
 Do not create or update an automation until the user explicitly asks. Never put a secret value in package files, prompts, or committed configuration.
 
 ## 1. Copy the pack and enable shared pstack skills
 
-Do this before asking for Benny configuration and before creating Pi schedules.
+Do this before asking for Benny configuration and before creating scheduler-backed operations.
 
 Ask which repository will run the automations. The source pack is the directory containing `FOR_AGENTS.md`. The destination is `<target-repository>/.pi/pstack/benny/`.
 
@@ -98,7 +98,7 @@ Ask for or confirm:
 - Repository URL and default branch
 - Triage identity or Slack user ID
 - Issue tracker type, team, project, labels, and intake status
-- Tracker adapter skill or MCP actions
+- Tracker adapter skill or available Pi tool actions
 - Optional routing map path
 - Required control skill name
 - Required user-facing feature-map path
@@ -162,15 +162,15 @@ Confirm that the named skill can:
 
 If any capability is missing, leave the repro automation disabled. It must fail closed rather than claim a reproduction it did not perform.
 
-## 7. Prepare the live automations
+## 7. Prepare the live operations
 
-Ask whether this is first-time creation or configuration of existing automations.
+Ask whether this is first-time setup or configuration of existing automation.
 
 Read `../../FOR_AGENTS.md` from the copied pack as the primary user-intent source for either path. Use it to understand the two triggers, tools, instructions, outcomes, and shared rules.
 
-### First-time creation
+### First-time setup
 
-Create one automation at a time.
+Prepare one operation at a time.
 
 For each automation:
 
@@ -178,14 +178,14 @@ For each automation:
 2. Turn `FOR_AGENTS.md`, the finished Benny configuration, and the template intent into a complete natural-language request.
 3. Tell the live prompt to read and follow its exact committed operational file under `.pi/pstack/benny/`.
 4. Use the stable repository-relative path, not a package source or cache path. Do not copy the operational file contents into the live prompt.
-5. Validate the matching `*.workflow.json` definition.
+5. Validate the matching `*.workflow.json` intent.
 6. Resolve Slack, repository, tracker, and control integrations through capability preflight.
 7. Confirm that the copied pack and referenced configuration files are committed in the repository where the schedule will run.
-8. Show the final schedule payload and obtain approval.
-9. Create the schedule through `subagent` `schedule.create` with `overlap: "skip"` and `catchUp: "latest"`.
-10. Verify the saved schedule before preparing the next one.
+8. Show the final invocation and obtain approval.
+9. If the host exposes a scheduler, map the invocation to it with `overlap: "skip"` and `catchUp: "latest"`.
+10. Verify the saved schedule when one was created. Otherwise run one approved on-demand check before preparing the next operation.
 
-Give the triage schedule this complete intent, filled from configuration:
+Give the triage invocation this complete intent, filled from configuration:
 
 - Name `benny-triage`.
 - Read and follow `.pi/pstack/benny/skills/triage-issue-reports/SKILL.md` for every run.
@@ -196,7 +196,7 @@ Give the triage schedule this complete intent, filled from configuration:
 - End one thread-only verdict with the configured `[benny:bug]`, `[benny:performance]`, or `[benny:other]` marker and optional tracker URL.
 - Never post a source-channel root message.
 
-After the triage schedule is verified, give the reproduce schedule this complete intent:
+After the triage invocation is verified, give the reproduce invocation this complete intent:
 
 - Name `benny-reproduce`.
 - Read and follow `.pi/pstack/benny/skills/reproduce-and-fix-issues/SKILL.md` for every run.
@@ -210,11 +210,11 @@ After the triage schedule is verified, give the reproduce schedule this complete
 - Attempt an optional bounded fix only after confirmed repro, then open a draft pull request when proof and checks pass.
 - Never post a source-channel root message.
 
-Do not create a schedule until every referenced capability and path passes preflight.
+Do not create a schedule or run an operation until every referenced capability and path passes preflight.
 
 ### Existing automations
 
-Use Pi schedule list, show, pause, resume, run, and delete actions to inspect or update existing Benny schedules. Do not create duplicates.
+Use the scheduler actions exposed by the host to inspect or update existing Benny schedules. Do not create duplicates. If no scheduler is available, keep the approved on-demand invocations instead.
 
 Finish configuration, routing, control-adapter, and feature-map validation. Then give the user this concise editor checklist.
 
@@ -238,11 +238,11 @@ For the existing repro automation, update:
 - Tracker, control-adapter, and feature-map requirements
 - Paraphrased marker wait, evidence, verification, and bounded-fix instructions
 
-Ask the user to update each existing automation directly in its Automations editor. Do not create replacements or duplicates.
+Ask the user to update each existing automation through the configuration surface exposed by its host scheduler. Do not create replacements or duplicates.
 
 ### Creation boundary
 
-Create schedules only through Pi's `subagent` schedule API after the user approves the final payload. Do not enable either schedule until the thread-safety test passes and `schedule.show` confirms the saved definition.
+Create schedules only through a scheduler exposed by the host and after the user approves the final payload. Do not enable either schedule until the thread-safety test passes and the host confirms the saved definition.
 
 ## 8. Test thread safety
 

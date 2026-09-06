@@ -25,12 +25,12 @@ The N candidates will receive the same prompt, so the prompt is the contract. Ge
 
 1. State the artifact each candidate is producing.
 2. Derive the rubric. State what success looks like for *this* task, then turn it into 3-6 concrete gradeable criteria. Concrete: `Adds a --dry-run flag that skips writes`. Vague: `code is correct`. The rubric is the picker's tool in Phase D; candidates only see the task.
-3. Pick the runners. Inspect `/subagents-models` and use available models from different provider families when judgment benefits from diversity. Default to the configured `oracle`, `worker`, `scout`, and `reviewer` agents, omitting `model` so their Pi profile applies. Spawn more only when the arena covers additional design directions.
+3. Pick the runners. Follow [`../../docs/delegation.md`](../../docs/delegation.md). Use available models from different provider families when judgment benefits from diversity. Default to the exploration, implementation, review, and judgment roles. Add runners only when the arena covers additional design directions.
 4. Assign output paths. Each candidate writes to its own location (a git worktree where possible, otherwise `/tmp/arena-<slug>/candidate-<n>/`). N candidates writing to the same path is shared mutable state and fails the the **separate-before-serializing-shared-state** principle skill test.
 
 ## Phase B: Fan out
 
-Spawn all N subagents in one message with `async: true`, each with the task, the path to the shared grounding, its own output path, and instructions to produce both the artifact and a short rationale.
+Launch all N independent candidates together, each with the task, the path to the shared grounding, its own output path, and instructions to produce both the artifact and a short rationale.
 
 The rationale is mandatory. Without it, the parent cannot tell whether a candidate's structure is principled or accidental, which makes Phase E grafting unreliable. Each rationale names the alternatives the candidate considered and what it rejected.
 
@@ -38,7 +38,7 @@ If a candidate fails to produce output, proceed with N-1 and note the dropout in
 
 ## Phase C: Cross-judge
 
-After all Phase B candidates complete, spawn one `oracle` as the read-only cross-judge. Prefer an available model family different from the parent's when `/subagents-models` proves one is configured; otherwise omit `model` and use the oracle profile. It sees the rubric and candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with candidates that are still writing.
+After all Phase B candidates complete, delegate one read-only cross-judge. Prefer an available model family different from the parent's when the host confirms one. It sees the rubric and candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the parent's reading in Phase D, not with candidates that are still writing.
 
 ## Phase D: Pick a base
 

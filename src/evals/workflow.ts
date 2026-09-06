@@ -1,13 +1,13 @@
 import {
-  buildParallelFanoutWorkflowScript,
-  validateWorkflowScript,
-  type WorkflowRole,
+  createDelegationTask,
+  type DelegationRole,
+  type DelegationTask,
 } from "../workflows/delegation.js";
 import type { EvalCase } from "./schema.js";
 
 export interface LocalEvalModel {
   key: string;
-  role?: WorkflowRole;
+  role?: DelegationRole;
   /** A model reference is retained in the local plan, never sent to the blind judge. */
   model?: string;
 }
@@ -18,7 +18,7 @@ export interface LocalMultiModelWorkflowOptions {
 }
 
 export interface LocalMultiModelWorkflowPlan {
-  script: string;
+  tasks: readonly { key: string; request: DelegationTask }[];
   candidates: readonly LocalEvalModel[];
   executesModels: false;
 }
@@ -34,21 +34,21 @@ function taskFor(evalCase: EvalCase, candidate: LocalEvalModel): string {
   ].join("\n");
 }
 
-/** Build an inspectable local fanout plan. It intentionally never invokes runs.run itself. */
+/** Build an inspectable task list. The caller chooses and owns any parallel execution. */
 export function buildLocalMultiModelWorkflowPlan(
   options: LocalMultiModelWorkflowOptions,
 ): LocalMultiModelWorkflowPlan {
   if (options.candidates.length < 2)
     throw new Error("A local multi-model eval requires at least two candidates.");
-  const children = options.candidates.map((candidate) => ({
+  const tasks = options.candidates.map((candidate) => ({
     key: candidate.key,
-    role: candidate.role ?? ("implement" as const),
-    task: taskFor(options.evalCase, candidate),
-    model: candidate.model,
+    request: createDelegationTask({
+      role: candidate.role ?? "implement",
+      task: taskFor(options.evalCase, candidate),
+      model: candidate.model,
+    }),
   }));
-  const script = buildParallelFanoutWorkflowScript(children);
-  validateWorkflowScript(script);
-  return { script, candidates: [...options.candidates], executesModels: false };
+  return { tasks, candidates: [...options.candidates], executesModels: false };
 }
 
 export const buildEvalWorkflowPlan = buildLocalMultiModelWorkflowPlan;

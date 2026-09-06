@@ -1,44 +1,27 @@
 # pi-pstack
 
-Port público, independente e nativo para Pi do [pstack](https://github.com/cursor/plugins/tree/main/pstack).
+Pacote independente de workflows verification-first para Pi.
 
-> **Origem e créditos:** o pstack original foi criado por [Lauren Tan (@poteto)](https://github.com/poteto) e é publicado no repositório [`cursor/plugins`](https://github.com/cursor/plugins/tree/main/pstack). Este projeto adapta o pstack para o runtime do Pi. Ele não é uma distribuição oficial da Poteto nem do Cursor.
-
-O `pi-pstack` preserva o método verification-first do projeto original: contexto de produto, feature maps, prova na superfície real, evals de skills, revisão independente e autonomia conquistada por evidência. A implementação usa contratos nativos do Pi, sem camada de compatibilidade com Cursor.
+O `pi-pstack` reúne contexto de produto, feature maps, prova na superfície real, evals de skills, revisão independente e autonomia conquistada por evidência. A proveniência do projeto fica isolada em [`UPSTREAM.md`](./UPSTREAM.md).
 
 ## O que está incluído
 
 - 44 skills e 22 playbooks portados para Pi.
-- Os agentes upstream `poteto-agent` e `comment-sicko`.
-- Um `benny-coordinator` restrito para executar automações sem entregar credenciais a child agents.
+- Prompts opcionais para os papéis `poteto-agent`, `comment-sicko` e `benny-coordinator`.
+- Delegação essencial por recursos do host no Herdr e por subprocesso Pi local nos demais ambientes.
 - `/poteto-mode` persistente durante a sessão ativa.
 - Feature maps, artifacts de navegador e receipts vinculados ao `HEAD` exato.
 - Evals cegos entre modelos, com hard assertions que o judge não pode ignorar.
-- Stacked PRs com `gh stack` por padrão e Graphite como backend opcional.
+- Entrega em stacked PRs quando um backend compatível está disponível.
 - Benny em modo draft-only: ele pode preparar uma draft PR, mas nunca faz merge ou deploy.
 
 ## Requisitos
 
 - Pi `0.84.2` ou mais recente.
-- `pi-subagents` `0.54.0` ou mais recente.
-- `@howaboua/pi-ask` `0.0.5` ou mais recente.
-- `pi-mcp-adapter` `2.27.0` ou mais recente para fluxos que consultam MCP.
-- Bun para as ferramentas locais que o utilizam.
-- `portless` para fluxos locais que expõem serviços.
-- Playwright Chromium para verificação de navegador.
-- `github/gh-stack` como backend padrão de stacked PRs.
-- Graphite `gt` somente quando o backend opcional for selecionado.
-- Um provider externo de Slack e tracker para executar Benny contra serviços reais.
+
+Delegação é parte essencial do pstack. O runtime segue [`docs/delegation.md`](./docs/delegation.md) e trata `HERDR_ENV` apenas como pista. Ele prefere os agents do host ou a CLI do Herdr somente quando essa capacidade está ativa e verificável. Caso contrário, inclusive dentro do Herdr, usa `pstack_delegate`, o fallback local de subprocesso Pi. Navegador, fontes externas, agendamento e entrega são capacidades opcionais. Playwright, backends de stack e providers de Slack ou tracker só são necessários para os fluxos que os utilizam.
 
 ## Instalação
-
-Instale as dependências do host uma vez:
-
-```bash
-pi install npm:pi-subagents@0.54.0
-pi install npm:@howaboua/pi-ask@0.0.5
-pi install npm:pi-mcp-adapter@2.27.0
-```
 
 Instale uma tag ou commit fixo deste repositório:
 
@@ -77,14 +60,14 @@ O modo sticky vale somente para a sessão ativa. O Pi restaura o estado pelo his
 
 1. `create-verification-skill` registra o caminho real da pessoa usuária em um feature map.
 2. O harness dirige a superfície real e captura screenshot, árvore de acessibilidade, DOM e trace.
-3. Evals executam candidatos cegos entre modelos e aplicam assertions determinísticas antes do judge.
+3. Evals podem executar candidatos cegos entre modelos e aplicam assertions determinísticas antes do judge.
 4. Uma revisão independente valida o mesmo `HEAD`.
 5. O receipt reúne essas provas e fica vinculado ao SHA.
 6. O merge atômico exige um receipt válido e checks verdes para cada PR incluído.
 
 ## Stacked PRs
 
-`gh stack` é o backend padrão. O adapter Graphite só aparece quando `gt` está instalado. O pacote traduz operações para os CLIs oficiais e não mantém um segundo grafo de branches.
+O fluxo de entrega usa apenas um backend que o ambiente disponibilize e que passe pelo preflight. Os adapters opcionais traduzem operações para os CLIs oficiais e não mantêm um segundo grafo de branches.
 
 O merge atômico exige um receipt por PR até o alvo. Gere cada receipt no checkout limpo do respectivo `HEAD` e mantenha os artifacts em caminhos imutáveis disponíveis durante a validação final. Se um digest de uma camada anterior não estiver disponível no checkout atual, o merge falha fechado.
 
@@ -97,18 +80,16 @@ Benny é instalado por projeto em `.pi/pstack/benny/`. A configuração fica sep
 - Workers não recebem credenciais nem ações de escrita para Slack.
 - Benny pode abrir uma draft PR. Ele nunca faz merge nem deploy.
 
-Os schedules ficam desativados até configuração, capability preflight e aprovação explícita.
+Agendamento é opcional. Sem scheduler disponível, Benny continua executável sob demanda. Qualquer schedule permanece desativado até configuração, capability preflight e aprovação explícita.
 
 ## Desenvolvimento e prova
 
 ```bash
 npm install
-npm run verify:deterministic
-npm run verify:browser
 npm run verify
 ```
 
-`npm run verify` executa a suíte determinística local. O julgamento ao vivo entre modelos é uma operação separada, executada por `scripts/grade-live-eval.mjs`.
+`npm run verify` executa os checks do pacote e as integrações locais com Pi, navegador e Benny. Upstream tools que exigem Bun, a CLI de entrega, providers externos e o eval ao vivo são opt-in. O eval ao vivo usa `scripts/grade-live-eval.mjs`.
 
 Para provar que o commit atual pode ser instalado pelo Git:
 
@@ -120,6 +101,6 @@ Essa verificação cria um projeto npm temporário, instala o `HEAD` por SHA, im
 
 ## Upstream e licença
 
-O port usa como base o pstack `0.14.2`, no commit upstream [`4612556`](https://github.com/cursor/plugins/commit/46125561306434d8a1d7745d540d8932ab0cd2a2). Consulte [`UPSTREAM.md`](./UPSTREAM.md) para o contrato de sincronização manual e a proveniência detalhada.
+Consulte [`UPSTREAM.md`](./UPSTREAM.md) para o contrato de sincronização manual e a proveniência detalhada.
 
 O código é distribuído sob a licença MIT. O arquivo [`LICENSE`](./LICENSE) preserva os créditos do projeto original e deste port.

@@ -15,7 +15,7 @@ Notion is where "why" often lives in long-form before it becomes code. A signifi
 
 ## How to search it
 
-Use the Notion MCP.
+Use the available read-only Notion tool.
 
 1. **Keyword searches with `notion-search`.** Try:
    - The feature name

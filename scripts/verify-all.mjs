@@ -8,18 +8,11 @@ for (const [command, args] of [
   ["npm", ["run", "typecheck"]],
   ["npm", ["test"]],
   [process.execPath, ["scripts/verify-package.mjs"]],
-  [process.execPath, ["scripts/verify-runtime.mjs"]],
-  [process.execPath, ["scripts/verify-upstream-tools.mjs"]],
+  [process.execPath, ["test/e2e/pi-rpc-e2e.mjs"]],
   [process.execPath, ["scripts/verify-browser-e2e.mjs"]],
-  [process.execPath, ["scripts/verify-evals.mjs"]],
-  [process.execPath, ["scripts/verify-delivery.mjs"]],
-  [process.execPath, ["scripts/verify-benny-e2e.mjs"]],
+  [process.execPath, ["test/e2e/benny-e2e.mjs"]],
 ]) {
   run(command, args);
 }
 
-console.log(
-  process.argv.includes("--e2e")
-    ? "clean install e2e verification passed"
-    : "complete verification passed",
-);
+console.log("complete verification passed");

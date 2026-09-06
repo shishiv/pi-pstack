@@ -9,11 +9,11 @@ Databricks is the product-analytics, data-pipeline, and warehouse-telemetry laye
 - **Experiment / feature-flag data.** Exposure and outcome tables. **Schema is company-specific.** Probe with `SHOW TABLES` before assuming names.
 - **System tables.** `system.query.history`, `system.compute.warehouses`, `system.billing.*`, `system.access.audit`. Answer "was this query expensive?", "how often did anyone run this?", "when did warehouse load spike?"
 - **dbt lineage.** Models in `<your_analytics_db>.<schema>` reveal what pipelines depend on a table/field; upstream changes frequently motivate consumer-code changes.
-- **Databricks notebooks.** Exploratory analyses engineers wrote before code changes. **Not queryable via the SQL MCP.** If you suspect the rationale lives in a notebook, name it as a gap.
+- **Databricks notebooks.** Exploratory analyses engineers wrote before code changes. **Not queryable through the SQL tool.** If you suspect the rationale lives in a notebook, name it as a gap.
 
 ## How to search it
 
-Use the Databricks SQL MCP. Primary tool: `execute_sql_read_only`. If it returns a `statement_id`, poll with `poll_sql_result` rather than re-running.
+Use the available read-only Databricks SQL tool. If it returns a `statement_id`, use its result lookup instead of re-running the query.
 
 **Orient before querying.** Schemas are company-specific; probe before trusting a table name:
 
@@ -57,7 +57,7 @@ Beyond the pattern shapes above:
 - **dbt refresh lag.** `<your_analytics_db>.<schema>.*` is rebuilt on a schedule (often hourly/daily). For events from the last few hours, fall back to `your_warehouse.events.*` and deduplicate by `_id`.
 - **Company-specific tables.** Experiment, feature-flag, billing, and usage tables vary. Reporting a result from a table whose existence you never confirmed is a classic failure mode. Probe with `SHOW TABLES` / `DESCRIBE TABLE` first.
 - **Retention cliff.** If the relevant window predates the table's retention or the dbt model's creation date, that's a *gap*, not a null result. Name it explicitly so the synthesizer doesn't read "no results" as "no activity."
-- **Notebooks aren't queryable.** The SQL MCP can't see Databricks notebooks. If you suspect the rationale lives in one, return a gap.
+- **Notebooks aren't queryable.** The SQL tool cannot see Databricks notebooks. If you suspect the rationale lives in one, return a gap.
 
 ## What to return
 

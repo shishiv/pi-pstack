@@ -16,7 +16,16 @@ A prova usa Playwright com seletores por role, label ou `data-testid`. Ela captu
 - trace do Playwright;
 - resultado do cleanup.
 
-Projetos reais devem iniciar o servidor com portless e registrar a URL nomeada no verification skill. O fixture deste pacote intercepta uma URL `.localhost` dentro do Playwright para manter o teste determinístico e sem processo privilegiado.
+O teste deste pacote inicia o fixture HTTP diretamente no Node, em `127.0.0.1` e em uma porta efêmera escolhida pelo sistema operacional. O Playwright abre essa URL e exercita os controles bom e quebrado sem proxy, subprocesso de servidor ou polling de health check.
+
+## Suíte local e integrações opcionais
+
+`npm run verify` cobre o runtime Pi, os checks locais e a prova real de navegador. A suíte padrão não exige Bun, portless ou gh-stack.
+
+As integrações mantêm verificadores explícitos fora da suíte padrão:
+
+- `npm run verify:tools` valida as ferramentas upstream e exige Bun;
+- `node scripts/verify-delivery.mjs` valida a integração de delivery e exige gh-stack.
 
 ## Eval de skill
 

@@ -477,10 +477,12 @@ test("schedule definitions use Pi every syntax derived from configuration", () =
       (workflow) =>
         workflow.tool === "pstack_benny" &&
         workflow.overlap === "skip" &&
-        workflow.catchUp === "latest",
+        workflow.catchUp === "latest" &&
+        workflow.task.role === "benny",
     ),
     true,
   );
+  assert.match(workflows[0].task.task, /call pstack_benny once with action triage/);
 });
 
 test("committed Benny workflow descriptors match the runtime contract", async () => {

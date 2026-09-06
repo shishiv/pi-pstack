@@ -5,7 +5,7 @@ Benny mantém duas rotinas separadas:
 1. Triage encontra novos relatos, preserva as coordenadas do thread, classifica, deduplica no tracker e publica um único verdict.
 2. Reproduce espera um marker confiável, encontra a feature no mapa, reproduz o sintoma duas vezes e verifica uma correção existente antes de considerar código novo.
 
-Os schedules usam o `subagent` do Pi com `overlap: "skip"` e `catchUp: "latest"`. O intervalo vem da configuração e é convertido para a granularidade aceita pelo scheduler.
+Agendamento é opcional. Quando o host oferece um scheduler, ele deve preservar `overlap: "skip"` e `catchUp: "latest"`. Sem scheduler, as duas operações continuam disponíveis sob demanda pelo Pi.
 
 ## Limites
 

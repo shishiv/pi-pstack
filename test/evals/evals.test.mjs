@@ -82,7 +82,7 @@ test("hard assertion gate cannot be overridden by a judge", () => {
   assert.equal(aggregate.winner, "Candidate A");
 });
 
-test("workflow plan uses existing fanout builder and does not execute models", () => {
+test("workflow plan exposes host-neutral delegation tasks and does not execute models", () => {
   const plan = evals.buildLocalMultiModelWorkflowPlan({
     evalCase: caseValue,
     candidates: [
@@ -91,7 +91,24 @@ test("workflow plan uses existing fanout builder and does not execute models", (
     ],
   });
   assert.equal(plan.executesModels, false);
-  assert.match(plan.script, /runs\.all/);
-  assert.match(plan.script, /provider-a\/model-a/);
-  assert.match(plan.script, /provider-b\/model-b/);
+  assert.deepEqual(
+    plan.tasks.map(({ key, request }) => ({
+      key,
+      role: request.role,
+      model: request.model,
+    })),
+    [
+      {
+        key: "candidate-a",
+        role: "implement",
+        model: "provider-a/model-a",
+      },
+      {
+        key: "candidate-b",
+        role: "implement",
+        model: "provider-b/model-b",
+      },
+    ],
+  );
+  assert.match(plan.tasks[0].request.task, /Candidate key: candidate-a/);
 });

@@ -24,8 +24,8 @@ Resolve what is in scope vs explicitly out, technical or platform constraints, p
 
 Delegate codebase exploration (the **guard-the-context-window** principle skill).
 
-- Prefer `agent: "poteto-agent"`. `reviewer` is the fallback. Never use the built-in `plan` agent; it ignores this skill.
-- Omit `model` to use the selected Pi agent profile. Pass it explicitly only after `/subagents-models` proves the provider-qualified ID is available.
+- Prefer the `agents/poteto-agent.md` prompt. Use a review role as the fallback. The delegate must read this skill rather than substituting a generic planning prompt.
+- Use the active Pi model by default. Pass a model explicitly only after the host reports the provider-qualified ID as available.
 
 Each explorer returns file pointers, conventions, dependencies, test infrastructure, and entry points. No inlined dumps.
 

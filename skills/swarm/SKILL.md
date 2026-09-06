@@ -22,15 +22,14 @@ Open a todolist with one entry per phase before launching anything.
 1. State the done predicate and the artifact or report the swarm must return.
 2. Choose the shape. Partition into slices, race N workers on identical briefs, or mix both. For a race or mixed shape, declare `first pass`, `rank all`, or `best-of` before spawning.
 3. Set N from the user or derive it from the shape. N is total workers, not the cloud concurrency limit.
-4. Use the configured `worker` agent by default. For a model race, inspect `/subagents-models`, name each available model up front, and pass it explicitly on that arm. Never use a symbolic profile name as a model ID.
+4. Use the implementation role by default. For a model race, inspect the models reported by the host, name each available model up front, and pass it explicitly on that arm. Never invent a model ID.
 5. Give each worker its own writable output when it writes. Use a worktree, branch, or `/tmp/swarm-<slug>/worker-<n>/`.
 
 ## Phase B: Fan out
 
-Launch one async `workflowScript` with stable child keys and
-`await runs.all([{ key, agent, task }, ...])`. Each child uses
-`worktree: true` when it writes. Use a local child only when it needs access
-to something on the user's computer.
+Follow [`../../docs/delegation.md`](../../docs/delegation.md). Launch the
+workers together with stable task keys. Give every writer its own worktree.
+Use a local delegate when the work needs access to the user's computer.
 
 When a worker must start from a non-default pushed branch, pass the managed
 worktree base branch explicitly.

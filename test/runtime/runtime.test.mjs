@@ -8,8 +8,9 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const { restoreModeState, modeStateEntry } = await jiti.import("../../src/mode/state.ts");
-const { preflightCapabilities } = await jiti.import("../../src/capabilities/preflight.ts");
-const { resolveModelRoles } = await jiti.import("../../src/models/roles.ts");
+const { detectDelegationEnvironment, isHerdrCliProbeSuccessful } = await jiti.import(
+  "../../src/capabilities/delegation.ts",
+);
 const { registerBennyAdapterProvider } = await jiti.import("../../src/benny/index.ts");
 const { gradeCandidate } = await jiti.import("../../src/evals/index.ts");
 const { default: potetoModeExtension } = await jiti.import("../../extensions/poteto-mode.ts");
@@ -128,12 +129,12 @@ async function writeRuntimeEvidence(project, repoIdentity = "acme/demo", headSha
 
 function fakeRuntime({
   entries = [],
-  tools = ["subagent", "mcp", "ask"],
+  tools = [],
   commands = ["poteto-mode"],
-  models = [],
   exec = async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
 } = {}) {
   let currentEntries = entries;
+  let activeTools = [...tools];
   const handlers = new Map();
   const commandsByName = new Map();
   const toolsByName = new Map();
@@ -159,6 +160,12 @@ function fakeRuntime({
     getAllTools() {
       return tools.map((name) => ({ name }));
     },
+    getActiveTools() {
+      return activeTools;
+    },
+    setActiveTools(names) {
+      activeTools = [...names];
+    },
     getCommands() {
       return commands.map((name) => ({ name, source: "extension", sourceInfo: {} }));
     },
@@ -177,17 +184,14 @@ function fakeRuntime({
     mode: "tui",
     hasUI: true,
     cwd: process.cwd(),
+    model: undefined,
+    thinkingLevel: undefined,
     ui: {
       notify(message, type) {
         notices.push({ message, type });
       },
     },
     sessionManager: pi.sessionManager,
-    modelRegistry: {
-      getAvailable() {
-        return models;
-      },
-    },
     isIdle() {
       return true;
     },
@@ -223,35 +227,61 @@ test("mode state restores only the latest entry in the active branch", () => {
   assert.deepEqual(modeStateEntry(true), { active: true });
 });
 
-test("capability preflight reports missing tools, commands, and roles", () => {
-  const result = preflightCapabilities({
-    tools: [{ name: "subagent" }],
-    commands: [{ name: "other" }],
-    availableModels: [],
-    requiredCommands: ["poteto-mode"],
-    requiredRoles: ["reasoning"],
+test("delegation detection distinguishes real Herdr, other hosts, and Pi children", () => {
+  assert.deepEqual(detectDelegationEnvironment({ tools: ["agents"], env: { HERDR_ENV: "1" } }), {
+    kind: "host-agents",
+    tool: "agents",
+    herdr: false,
   });
-  assert.equal(result.ok, false);
-  assert.deepEqual(result.missingTools, ["ask"]);
-  assert.deepEqual(result.missingCommands, ["poteto-mode"]);
-  assert.deepEqual(result.missingRoles, ["reasoning"]);
-});
-
-test("model roles resolve from scoped available Pi models and never invent ids", () => {
-  const models = [
-    { provider: "one", id: "quick", reasoning: false },
-    { provider: "two", id: "deep", reasoning: true },
-  ];
-  const result = resolveModelRoles({
-    availableModels: models,
-    scopedModels: [{ model: models[1] }],
-    roles: ["reasoning"],
+  assert.deepEqual(detectDelegationEnvironment({ tools: ["agents"], env: {} }), {
+    kind: "host-agents",
+    tool: "agents",
+    herdr: false,
   });
-  assert.equal(result.resolved.reasoning, models[1]);
-  assert.equal(Object.keys(result.resolved).length, 1);
-  assert.deepEqual(resolveModelRoles({ availableModels: [], roles: ["fast"] }).missingRoles, [
-    "fast",
-  ]);
+  assert.deepEqual(detectDelegationEnvironment({ tools: [], env: {} }), {
+    kind: "pi-cli",
+    tool: "pstack_delegate",
+    herdr: false,
+  });
+  assert.deepEqual(
+    detectDelegationEnvironment({
+      tools: ["exec"],
+      env: { HERDR_ENV: "1" },
+      herdrCliAvailable: true,
+    }),
+    { kind: "herdr-cli", command: "herdr", herdr: true },
+  );
+  assert.equal(
+    isHerdrCliProbeSuccessful(
+      { HERDR_ENV: "1" },
+      {
+        code: 0,
+        stdout: JSON.stringify({
+          result: { pane: { pane_id: "w1:p1", workspace_id: "w1" } },
+        }),
+        stderr: "",
+      },
+    ),
+    true,
+  );
+  assert.equal(
+    isHerdrCliProbeSuccessful(
+      { HERDR_ENV: "1" },
+      { code: 0, stdout: "Usage: herdr [OPTIONS]", stderr: "" },
+    ),
+    false,
+  );
+  assert.equal(
+    isHerdrCliProbeSuccessful(
+      { HERDR_ENV: "1" },
+      { code: 127, stdout: "", stderr: "herdr: not found" },
+    ),
+    false,
+  );
+  assert.deepEqual(
+    detectDelegationEnvironment({ tools: ["agents"], env: { PSTACK_DELEGATION_CHILD: "1" } }),
+    { kind: "delegated-pi-child", herdr: false },
+  );
 });
 
 test("extension commands persist, restore, isolate, and inject loaded skill content", async () => {
@@ -270,6 +300,7 @@ test("extension commands persist, restore, isolate, and inject loaded skill cont
     first.ctx,
   );
   assert.match(injected.systemPrompt, /# Poteto mode/);
+  assert.match(injected.systemPrompt, /pstack_delegate/);
 
   const restored = fakeRuntime({
     entries: [{ type: "custom", customType: "poteto-mode", data: { active: true } }],
@@ -284,19 +315,78 @@ test("extension commands persist, restore, isolate, and inject loaded skill cont
   assert.match(isolated.notices.at(-1).message, /off|inactive/i);
 });
 
-test("task fails closed when a required runtime capability is unavailable", async () => {
-  const runtime = fakeRuntime({ tools: ["ask", "mcp"] });
+test("task uses the Pi CLI delegation fallback without subagent or ask tools", async () => {
+  const runtime = fakeRuntime();
   await runtime.handlers.get("session_start")?.({}, runtime.ctx);
-  await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
-  assert.equal(runtime.messages.length, 0);
-  assert.match(runtime.notices.at(-1).message, /subagent/);
-});
-
-test("task remains available when only optional MCP evidence is unavailable", async () => {
-  const runtime = fakeRuntime({ tools: ["subagent", "ask"] });
-  await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+  const fallback = runtime.toolsByName.get("pstack_delegate");
+  assert.ok(fallback);
+  assert.deepEqual(Object.keys(fallback.parameters.properties).toSorted(), [
+    "cwd",
+    "model",
+    "role",
+    "task",
+  ]);
+  assert.deepEqual(fallback.parameters.required.toSorted(), ["role", "task"]);
   await runtime.commandsByName.get("poteto-mode")?.("task", runtime.ctx);
   assert.equal(runtime.messages.length, 1);
+});
+
+test("host agents delegation suppresses the Pi CLI fallback", async () => {
+  const runtime = fakeRuntime({
+    entries: [{ type: "custom", customType: "poteto-mode", data: { active: true } }],
+    tools: ["agents"],
+  });
+  await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+  assert.equal(runtime.toolsByName.has("pstack_delegate"), false);
+  const injected = await runtime.handlers.get("before_agent_start")?.(
+    {
+      systemPrompt: "base",
+      systemPromptOptions: {
+        skills: [{ name: "poteto-mode", content: "# Poteto mode" }],
+      },
+    },
+    runtime.ctx,
+  );
+  assert.match(injected.systemPrompt, /provides the agents tool/);
+  assert.doesNotMatch(injected.systemPrompt, /Use pstack_delegate/);
+});
+
+test("verified Herdr CLI uses host delegation when agents is nested under exec", async () => {
+  const previous = process.env.HERDR_ENV;
+  process.env.HERDR_ENV = "1";
+  try {
+    const runtime = fakeRuntime({
+      entries: [{ type: "custom", customType: "poteto-mode", data: { active: true } }],
+      tools: ["exec"],
+      exec: async (command, args) => {
+        assert.deepEqual([command, ...args], ["herdr", "pane", "current", "--current"]);
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            result: { pane: { pane_id: "w1:p1", workspace_id: "w1" } },
+          }),
+          stderr: "",
+          killed: false,
+        };
+      },
+    });
+    await runtime.handlers.get("session_start")?.({}, runtime.ctx);
+    assert.equal(runtime.toolsByName.has("pstack_delegate"), false);
+    const injected = await runtime.handlers.get("before_agent_start")?.(
+      {
+        systemPrompt: "base",
+        systemPromptOptions: {
+          skills: [{ name: "poteto-mode", content: "# Poteto mode" }],
+        },
+      },
+      runtime.ctx,
+    );
+    assert.match(injected.systemPrompt, /tools\.agents/);
+    assert.doesNotMatch(injected.systemPrompt, /Use pstack_delegate/);
+  } finally {
+    if (previous === undefined) delete process.env.HERDR_ENV;
+    else process.env.HERDR_ENV = previous;
+  }
 });
 
 test("one extension instance resets sticky state when Pi switches sessions", async () => {

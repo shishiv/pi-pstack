@@ -6,7 +6,11 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { preflightCapabilities } from "../src/capabilities/preflight.js";
+import {
+  delegationGuidance,
+  detectDelegationEnvironment,
+  isHerdrCliProbeSuccessful,
+} from "../src/capabilities/delegation.js";
 import { listBennyAdapterProviders, runBennyRuntime } from "../src/benny/index.js";
 import {
   authorizeDelivery,
@@ -21,6 +25,11 @@ import {
 } from "../src/delivery/index.js";
 import { POTETO_MODE_ENTRY, modeStateEntry, restoreModeState } from "../src/mode/state.js";
 import { generateProjectVerificationSkill } from "../src/verification/index.js";
+import {
+  createDelegationTask,
+  runPiDelegation,
+  type DelegationRole,
+} from "../src/workflows/delegation.js";
 
 const COMMAND = "poteto-mode";
 
@@ -44,6 +53,8 @@ function notify(
 
 export default function potetoModeExtension(pi: ExtensionAPI): void {
   let active = false;
+  let fallbackDelegationRegistered = false;
+  let herdrCliAvailable = false;
 
   function persist(next: boolean): void {
     active = next;
@@ -56,21 +67,34 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
     active = branchState(ctx);
   }
 
-  function preflight(ctx: ExtensionContext): string[] {
-    const result = preflightCapabilities({
-      tools: pi.getAllTools(),
-      commands: pi.getCommands(),
-      availableModels: ctx.modelRegistry.getAvailable(),
-      scopedModels: ctx.scopedModels,
+  function syncDelegationEnvironment() {
+    const activeTools = pi.getActiveTools();
+    const environment = detectDelegationEnvironment({
+      tools: activeTools,
+      env: process.env,
+      herdrCliAvailable,
     });
-    return result.diagnostics;
+    if (environment.kind === "delegated-pi-child") return environment;
+    if (environment.kind === "host-agents" || environment.kind === "herdr-cli") {
+      if (fallbackDelegationRegistered && activeTools.includes("pstack_delegate")) {
+        pi.setActiveTools(activeTools.filter((name) => name !== "pstack_delegate"));
+      }
+      return environment;
+    }
+    if (!fallbackDelegationRegistered) {
+      registerPiDelegationTool(pi);
+      fallbackDelegationRegistered = true;
+    }
+    if (!activeTools.includes("pstack_delegate")) {
+      pi.setActiveTools([...activeTools, "pstack_delegate"]);
+    }
+    return environment;
   }
 
   pi.on("session_start", async (_event, ctx) => {
     restore(ctx);
-    // Probe all host capability surfaces during startup without changing
-    // settings or failing print/JSON sessions. A task invocation fails closed.
-    preflight(ctx);
+    herdrCliAvailable = await probeHerdrCli(pi);
+    syncDelegationEnvironment();
   });
 
   pi.on("session_tree", async (_event, ctx) => {
@@ -96,11 +120,7 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      const diagnostics = preflight(ctx);
-      if (diagnostics.length > 0) {
-        notify(ctx, `poteto mode task unavailable.\n${diagnostics.join("\n")}`, "error");
-        return;
-      }
+      syncDelegationEnvironment();
       persist(true);
       const options = ctx.isIdle()
         ? { expandPromptTemplates: true }
@@ -466,9 +486,80 @@ export default function potetoModeExtension(pi: ExtensionAPI): void {
       skill.content ??
       (skill.filePath ? await readFile(skill.filePath, "utf8").catch(() => undefined) : undefined);
     if (!content) return;
+    const guidance = delegationGuidance(syncDelegationEnvironment());
     return {
-      systemPrompt: `${event.systemPrompt}\n\n## Loaded skill: ${skill.filePath ?? "poteto-mode"}\n\n${content}`,
+      systemPrompt: `${event.systemPrompt}\n\n## Delegation runtime\n\n${guidance}\n\n## Loaded skill: ${skill.filePath ?? "poteto-mode"}\n\n${content}`,
     };
+  });
+}
+
+async function probeHerdrCli(pi: ExtensionAPI): Promise<boolean> {
+  if (process.env.HERDR_ENV !== "1" || process.env.PSTACK_DELEGATION_CHILD === "1") return false;
+  try {
+    const result = await pi.exec("herdr", ["pane", "current", "--current"], { timeout: 3_000 });
+    return isHerdrCliProbeSuccessful(process.env, result);
+  } catch {
+    return false;
+  }
+}
+
+function registerPiDelegationTool(pi: ExtensionAPI): void {
+  pi.registerTool({
+    name: "pstack_delegate",
+    label: "Delegate to Pi",
+    description: "Run one task in an isolated Pi CLI process when the host has no agents tool.",
+    promptSnippet: "Delegate one task to an isolated Pi process",
+    promptGuidelines: [
+      "Use pstack_delegate only when the host agents tool is unavailable. Read-only roles cannot edit files or perform external writes.",
+    ],
+    parameters: Type.Object({
+      task: Type.String({ minLength: 1 }),
+      role: Type.Union([
+        Type.Literal("explore"),
+        Type.Literal("research"),
+        Type.Literal("implement"),
+        Type.Literal("review"),
+        Type.Literal("judge"),
+        Type.Literal("style"),
+        Type.Literal("benny"),
+      ]),
+      cwd: Type.Optional(Type.String({ minLength: 1 })),
+      model: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const role: DelegationRole = params.role;
+      const task = createDelegationTask({
+        role,
+        task: params.task,
+        cwd: params.cwd,
+        model: params.model,
+      });
+      const result = await runPiDelegation(task, {
+        cwd: ctx.cwd,
+        signal,
+        model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+        thinkingLevel: ctx.thinkingLevel,
+      });
+      if (result.status !== "completed") {
+        throw new Error(
+          `${result.error} Evidence: exit=${result.evidence.exitCode ?? "none"}, finalMessage=${result.evidence.finalMessage}.`,
+        );
+      }
+      const evidence = [
+        "Pi child completed",
+        `exit=${result.evidence.exitCode}`,
+        `finalMessage=${result.evidence.finalMessage}`,
+        result.evidence.sessionId ? `session=${result.evidence.sessionId}` : undefined,
+        result.evidence.stopReason ? `stopReason=${result.evidence.stopReason}` : undefined,
+        result.evidence.outputTruncated ? "outputTruncated=true" : undefined,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      return {
+        content: [{ type: "text", text: `${result.output}\n\nCompletion evidence: ${evidence}.` }],
+        details: result,
+      };
+    },
   });
 }
 

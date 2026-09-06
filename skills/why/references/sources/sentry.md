@@ -15,7 +15,7 @@ The most valuable thing Sentry provides is **temporal correlation**: "issue X wa
 
 ## How to search it
 
-Use the Sentry MCP.
+Use the available read-only Sentry tool.
 
 1. **Orient.** If you don't know the project slug and organization:
 

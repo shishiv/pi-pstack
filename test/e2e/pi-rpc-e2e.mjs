@@ -27,10 +27,9 @@ function install(source) {
 }
 
 try {
-  install(join(root, "node_modules", "pi-subagents"));
   install(root);
 
-  const child = spawn("pi", ["--mode", "rpc"], {
+  const child = spawn("pi", ["--mode", "rpc", "--no-session"], {
     cwd,
     encoding: "utf8",
     env,
@@ -44,7 +43,6 @@ try {
     { id: "commands", type: "get_commands" },
     { id: "on", type: "prompt", message: "/poteto-mode on" },
     { id: "active", type: "prompt", message: "/poteto-mode status" },
-    { id: "doctor", type: "prompt", message: "/subagents-doctor" },
     { id: "off", type: "prompt", message: "/poteto-mode off" },
     { id: "inactive", type: "prompt", message: "/poteto-mode status" },
   ]) {
@@ -65,7 +63,6 @@ try {
   )?.data?.commands;
   assert.ok(Array.isArray(commands));
   assert.ok(commands.some((command) => command.name === "poteto-mode"));
-  assert.ok(commands.some((command) => command.name === "subagents-doctor"));
   const packageSkills = commands.filter(
     (command) =>
       command.source === "skill" &&
@@ -88,13 +85,6 @@ try {
   assert.ok(notices.includes("poteto mode is active."));
   assert.ok(notices.includes("poteto mode disabled."));
   assert.ok(notices.includes("poteto mode is off."));
-  const doctor = events.find(
-    (event) =>
-      event.type === "message_end" &&
-      event.message?.customType === "subagent-slash-result" &&
-      event.message?.content?.includes("Subagents doctor report"),
-  )?.message?.content;
-  assert.match(doctor ?? "", /package 3/);
 } finally {
   await rm(home, { recursive: true, force: true });
 }

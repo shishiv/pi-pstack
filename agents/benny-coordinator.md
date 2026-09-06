@@ -2,10 +2,6 @@
 name: benny-coordinator
 description: Runs one guarded Benny triage or reproduce cycle through pstack_benny. It cannot call external services or delivery tools directly.
 tools: read, grep, find, ls, pstack_benny
-acceptanceRole: writer
-inheritProjectContext: true
-inheritSkills: false
-async: true
 ---
 
 # Benny coordinator

@@ -1,6 +1,6 @@
 # Reproduce automation prompt
 
-> Source material for the copied setup workflow. Paraphrase this intent into the approved Pi schedule payload after confirming that the copied pack is committed in the repository where the schedule will run.
+> Source material for the copied setup workflow. Paraphrase this intent into an on-demand invocation or the approved payload of an available scheduler after confirming that the copied pack is committed in the repository where it will run.
 
 Read and follow `.pi/pstack/benny/skills/reproduce-and-fix-issues/SKILL.md` for this run.
 

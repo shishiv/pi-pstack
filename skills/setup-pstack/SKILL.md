@@ -1,60 +1,44 @@
 ---
 name: setup-pstack
-description: Configure pstack's semantic roles through Pi and pi-subagents model profiles. Use for /skill:setup-pstack, "configure pstack models", or changing pstack's model choices.
+description: Configure pstack delegation against the active Pi host. Use for /skill:setup-pstack, "configure pstack models", or checking delegation readiness.
 ---
 
 # Setup pstack
 
-Use Pi's model registry and pi-subagents profiles. Never copy foreign model slugs, invent a model ID, or replace the user's complete settings file.
+Read [`../../docs/delegation.md`](../../docs/delegation.md). Configure against capabilities that the active Pi environment actually exposes. Do not install another agent package, invent a model ID, or replace the user's complete settings file.
 
-## 1. Inspect the live registry
+## 1. Identify the host
 
-Run `/subagents-models` to inspect the models resolved for `scout`, `researcher`, `worker`, `reviewer`, `oracle`, `poteto-agent`, and `comment-sicko`. Use `ctx.scopedModels` or `ctx.modelRegistry.getAvailable()` when this runs from an extension.
-
-If the provider catalogue is stale, use `/subagents-refresh-provider-models <provider>`. Do not infer entitlement from documentation.
+Inspect the host instructions and available tools. Treat `HERDR_ENV` only as a hint. Prefer the host path only when an active agents capability is present or `herdr pane current --current` succeeds and returns a valid current pane; follow its real contract. Otherwise use `pstack_delegate`, including inside Herdr. Do not send a local task to a remote executor merely because another delegation tool is absent.
 
 ## 2. Map semantic roles
 
-Map pstack work to Pi agents rather than to provider-specific names:
+Map pstack work to roles rather than provider-specific names:
 
-| pstack role | Pi agent |
+| pstack role | Responsibility |
 | --- | --- |
-| fast exploration | `scout` |
-| external research | `researcher` |
-| implementation and precise execution | `worker` |
-| independent code review | `reviewer` |
-| judgment, synthesis, and cross-judge | `oracle` |
-| full pstack style | `poteto-agent` |
-| comment-only review | `comment-sicko` |
+| fast local exploration | exploration |
+| external research | research |
+| implementation and precise execution | implementation |
+| independent code review | review |
+| judgment, synthesis, and cross-judge | judgment |
+| full pstack style | the `agents/poteto-agent.md` prompt |
+| comment-only review | the `agents/comment-sicko.md` prompt |
 
-For a multi-model panel, select available models explicitly on each `runs.all` child. The execution plan may contain provider/model identities. Candidate outputs passed to a blind judge must not.
+The active model is the default for every role. For a multi-model panel, select explicit models only from the live Pi model registry. Candidate outputs passed to a blind judge must not contain provider or model identity.
 
-## 3. Choose and load a Pi profile
+## 3. Verify
 
-Prefer Pi's existing profile flow:
+Run one harmless read-only delegation and confirm that the selected path:
 
-```text
-/subagents-generate-profiles <provider>
-/subagents-load-profile <provider.profile>
-/subagents-check-profile <provider.profile>
-```
+- launches from the intended working directory;
+- returns its result to the parent;
+- preserves the read-only tool restriction;
+- reports failure without hiding it;
+- uses `pstack_delegate` outside Herdr.
 
-If the existing profile already gives each role an appropriate model, make no change. If an override is necessary, merge only the named entries under `subagents.agentOverrides` in `~/.pi/agent/settings.json` or project `.pi/settings.json`. Preserve every unrelated setting. Use `model: "inherit"` when the role should follow the parent.
+When model diversity is configured, run a two-candidate blind check and confirm that both selected models are available. A missing optional model reduces diversity. A missing delegation path is a failed setup.
 
-Never add ad hoc profile or pstack-role objects to settings. pi-subagents stores generated profiles under `~/.pi/agent/profiles/pi-subagents/` and owns their format.
-
-## 4. Verify
-
-Run `/subagents-check-profile <profile>` and then start a fresh Pi session. Confirm that:
-
-- `subagent` is available;
-- `poteto-agent` and `comment-sicko` appear in agent discovery;
-- `comment-sicko` remains read-only;
-- every explicit model resolves through the live registry;
-- a two-candidate blind eval launches different configured models when the profile provides them.
-
-An unresolved model or missing tool is a failed setup. Report the exact gap and leave the existing configuration unchanged.
-
-## 5. Establish verification
+## 4. Establish verification
 
 If the project has no `verify-*` skill and feature map, offer `/skill:create-verification-skill`. Model routing does not create trust by itself. The project earns higher autonomy only after its real verification and eval gates pass.

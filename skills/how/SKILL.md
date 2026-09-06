@@ -42,10 +42,10 @@ Decompose the question into 2-4 parallel exploration angles, each a distinct sli
 
 The right decomposition depends on the question. Use your judgment. Narrow questions: 2 explorers is fine. Broad subsystems: up to 4.
 
-Spawn all explorers in a single message:
+Launch all explorers together through [`../../docs/delegation.md`](../../docs/delegation.md):
 
-- `agent`: `scout`
-- omit `model` to use the configured scout profile; pass a provider-qualified model only after `/subagents-models` confirms it
+- role: exploration
+- select an explicit model only after the host reports it as available
 
 Each explorer gets the same base prompt from `references/explorer-prompt.md` plus a specific exploration angle naming its slice. Each explorer should:
 - Start broad: Glob for relevant directories, Grep for key types/interfaces/class names
@@ -60,10 +60,9 @@ Then proceed to Step 3.
 
 ### Step 2b. Direct Explain (simple questions)
 
-Spawn a single subagent subagent that explores and explains in one pass:
+Delegate one task that explores and explains in one pass:
 
-- `agent`: `oracle`
-- omit `model` to use the configured oracle profile
+- role: judgment
 
 The agent does its own exploration (Glob, Grep, Read) and writes the explanation directly. Read `references/explainer-prompt.md` for the communication style and output format. Same structure, just no explorer findings as input.
 
@@ -71,10 +70,9 @@ Proceed to Step 4.
 
 ### Step 3. Synthesize (complex questions only)
 
-Once all explorers return, spawn a single subagent subagent to synthesize their findings into one coherent explanation:
+Once all explorers return, delegate one judgment task to synthesize their findings into one coherent explanation:
 
-- `agent`: `oracle`
-- omit `model` to use the configured oracle profile
+- use the active model unless the host reports another available model selected for synthesis
 
 The explainer gets all explorers' findings and writes the human-facing explanation (output format below). Read `references/explainer-prompt.md` for the full prompt template. The explainer reconciles overlapping findings, resolves contradictions, and weaves the slices into a unified picture.
 
@@ -106,11 +104,11 @@ Run the full explain flow above (Steps 1-4). You must understand the architectur
 
 ### Step 2. Spawn Critics
 
-After the explanation is complete, spawn architectural critics through `reviewer` and `oracle`, plus explicitly selected available models when a cross-provider comparison is useful. Launch them in one `workflowScript` with `runs.all`.
+After the explanation is complete, launch independent architectural critics together through the review and judgment roles. Add explicitly selected models when the host reports them as available and a cross-provider comparison is useful.
 
 For each critic:
-- `agent`: `reviewer` or `oracle`
-- omit `model` to use the agent profile, or pass one provider-qualified ID proven by `/subagents-models`
+- role: review or judgment
+- use the active model unless the host reports another available model selected for comparison
 
 Read `references/critic-prompt.md` for the prompt template. Each critic gets:
 1. The explanation from Step 1 (so they don't re-explore)

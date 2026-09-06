@@ -1,6 +1,6 @@
 ---
 name: pstack-reflect
-description: Spawn three parallel review subagents over the active transcript, surface learnings, and route each to a concrete edit on an existing skill. Use when the user says reflect.
+description: Delegate three parallel reviews over the active transcript, surface learnings, and route each to a concrete edit on an existing skill. Use when the user says reflect.
 disable-model-invocation: true
 ---
 
@@ -22,31 +22,23 @@ Skip when the conversation is trivial, off-topic, or already covered by an exist
 
 ### 1. Locate the active transcript
 
-The parent finds its own transcript file before fanning out. The system prompt names the active session transcript named by `$PI_SESSION_FILE`; use that path. Read only the path named by `$PI_SESSION_FILE`. That crosses workspace boundaries and reads private chats from unrelated projects.
-
-```bash
-ls -t <agent-transcripts>/*.jsonl <agent-transcripts>/*/*.jsonl <agent-transcripts>/*/subagents/*.jsonl 2>/dev/null | head -10
-```
-
-Three transcript layouts: legacy flat (`<id>.jsonl`), current nested (`<id>/<id>.jsonl`), and subagent (`<parent>/subagents/<child>.jsonl`).
-
-For each candidate, read the first JSONL line and check that `message.content[0].text` contains the conversation's opening user prompt. Take the matching path. If no path resolves, write a tight digest of the session and pass that instead.
+The parent finds its own transcript before fanning out. Use only the active session path named by `$PI_SESSION_FILE`. Do not infer another storage layout or glob for nearby transcripts, because that crosses workspace boundaries and reads private chats from unrelated projects. If the path is unavailable, write a tight digest of the session and pass that instead.
 
 ### 2. Spawn three reviewers in parallel
 
-One `workflowScript`, three parallel children. Use `delegate` for reviewers that need ambient MCP tools and `reviewer` for a source-only pass. The prompt forbids file writes; the parent applies edits. Run capability preflight before launch because a strict tool allowlist does not load extension tools by itself.
+Follow [`../../docs/delegation.md`](../../docs/delegation.md) and launch three read-only reviewers together. Give external-source tools only to reviewers that need them. The prompt forbids file writes; the parent applies edits. Run capability preflight before launch.
 
-| Lens | `model` | Prompt template |
+| Lens | Role | Prompt template |
 |---|---|---|
-| Judgment | configured `oracle` or MCP-capable `delegate` | `references/judgment-reviewer.md` |
-| Tooling | MCP-capable `delegate` | `references/tooling-reviewer.md` |
-| Divergent | configured `reviewer` | `references/divergent-reviewer.md` |
+| Judgment | judgment with optional external-source tools | `references/judgment-reviewer.md` |
+| Tooling | review with optional external-source tools | `references/tooling-reviewer.md` |
+| Divergent | review | `references/divergent-reviewer.md` |
 
-Pass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings in the `subagent` response body.
+Pass each template verbatim, substituting the transcript path or digest where marked. Reviewers return findings through the selected delegation capability.
 
 ### 3. Synthesize
 
-Run one `oracle` synthesizer after the three reviews. If citation verification requires MCP, use an MCP-capable `delegate` instead and forbid file writes in its task. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.
+Delegate one judgment pass after the three reviews. Give it available read-only external-source tools when citation verification needs them, and forbid file writes. Use `references/synthesizer.md` verbatim, with each reviewer's full output inlined where marked. The synthesizer returns a structured Accepted / Rejected / Backlog list.
 
 ### 4. Structural enforcement check
 
