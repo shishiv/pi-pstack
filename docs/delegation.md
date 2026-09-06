@@ -4,9 +4,10 @@ Delegation is a required capability for pstack workflows that call for independe
 
 ## Select the available path
 
-1. Inspect the host instructions and available tools. Treat `HERDR_ENV` only as a hint.
-2. Prefer the host path only when an active agents capability is present or `herdr pane current --current` succeeds and returns a valid current pane. Follow that capability's real contract.
-3. Otherwise use `pstack_delegate`, including inside Herdr.
+1. Check `PSTACK_DELEGATION_CHILD` first. If it equals `1`, complete the assigned task directly and do not delegate again.
+2. Inspect the host instructions and available tools. Treat `HERDR_ENV` only as a hint.
+3. Prefer the host path only when an active agents capability is present or `herdr pane current --current` succeeds and returns a valid current pane. Follow that capability's real contract.
+4. Otherwise use `pstack_delegate`, including inside Herdr.
 
 Do not send work to a remote executor merely because another delegation tool is absent. Do not replace required independent review with self-review.
 

@@ -3,6 +3,11 @@ import { isDelegatedPiChild } from "../workflows/delegation.js";
 export const HOST_DELEGATION_TOOL = "agents";
 export const PI_DELEGATION_TOOL = "pstack_delegate";
 
+const PARENT_DELEGATION_REQUIREMENT =
+  "When a user explicitly requests independent review, independent analyses, isolated context, or parallel work, delegation is required. " +
+  "The parent agent must dispatch every requested workstream and collect every result. " +
+  "The parent agent must not perform any of those workstreams itself.";
+
 export type DelegationEnvironment =
   | { readonly kind: "host-agents"; readonly tool: "agents"; readonly herdr: boolean }
   | { readonly kind: "herdr-cli"; readonly command: "herdr"; readonly herdr: true }
@@ -52,10 +57,10 @@ export function delegationGuidance(environment: DelegationEnvironment): string {
   }
   if (environment.kind === "host-agents") {
     const host = environment.herdr ? "Herdr" : "The current host";
-    return `${host} provides the agents tool. Use agents for delegation. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. The host owns agent lifecycle and terminal layout; do not invoke the Herdr CLI from pi-pstack.`;
+    return `${PARENT_DELEGATION_REQUIREMENT} ${host} provides the agents tool. Use agents for delegation. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. The host owns agent lifecycle and terminal layout; do not invoke the Herdr CLI from pi-pstack.`;
   }
   if (environment.kind === "herdr-cli") {
-    return "Herdr CLI is verified in this managed pane. Prefer the host agents capability exposed through exec as tools.agents. If that capability is absent, use documented herdr agent commands. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. Pi-pstack does not own pane or terminal layout.";
+    return `${PARENT_DELEGATION_REQUIREMENT} Herdr CLI is verified in this managed pane. Prefer the host agents capability exposed through exec as tools.agents. If that capability is absent, use documented herdr agent commands. Map explore and research to explorer, review and judge to reviewer, and implement, style, and benny to general. Pi-pstack does not own pane or terminal layout.`;
   }
-  return "No host agents tool is available. Use pstack_delegate for one isolated Pi child. It provides no scheduler, sandbox, or isolated worktree.";
+  return `${PARENT_DELEGATION_REQUIREMENT} No host agents tool is available. Use pstack_delegate for one isolated Pi child. It provides no scheduler, sandbox, or isolated worktree.`;
 }

@@ -8,9 +8,8 @@ import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url, { interopDefault: true });
 const { restoreModeState, modeStateEntry } = await jiti.import("../../src/mode/state.ts");
-const { detectDelegationEnvironment, isHerdrCliProbeSuccessful } = await jiti.import(
-  "../../src/capabilities/delegation.ts",
-);
+const { delegationGuidance, detectDelegationEnvironment, isHerdrCliProbeSuccessful } =
+  await jiti.import("../../src/capabilities/delegation.ts");
 const { registerBennyAdapterProvider } = await jiti.import("../../src/benny/index.ts");
 const { gradeCandidate } = await jiti.import("../../src/evals/index.ts");
 const { default: potetoModeExtension } = await jiti.import("../../extensions/poteto-mode.ts");
@@ -387,6 +386,22 @@ test("verified Herdr CLI uses host delegation when agents is nested under exec",
     if (previous === undefined) delete process.env.HERDR_ENV;
     else process.env.HERDR_ENV = previous;
   }
+});
+
+test("delegation guidance requires the parent to delegate every independent workstream", () => {
+  const parentRequirement =
+    /delegation is required[\s\S]*dispatch every requested workstream[\s\S]*collect every result[\s\S]*must not perform/;
+  for (const environment of [
+    { kind: "host-agents", tool: "agents", herdr: false },
+    { kind: "herdr-cli", command: "herdr", herdr: true },
+    { kind: "pi-cli", tool: "pstack_delegate", herdr: false },
+  ]) {
+    assert.match(delegationGuidance(environment), parentRequirement, environment.kind);
+  }
+
+  const childGuidance = delegationGuidance({ kind: "delegated-pi-child", herdr: false });
+  assert.doesNotMatch(childGuidance, parentRequirement);
+  assert.match(childGuidance, /do not delegate again/);
 });
 
 test("one extension instance resets sticky state when Pi switches sessions", async () => {
