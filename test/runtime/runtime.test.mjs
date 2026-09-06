@@ -399,10 +399,12 @@ test("delegation guidance requires the parent to delegate every independent work
     assert.match(delegationGuidance(environment), parentRequirement, environment.kind);
   }
 
+  const herdrGuidance = delegationGuidance({ kind: "herdr-cli", command: "herdr", herdr: true });
   assert.match(
-    delegationGuidance({ kind: "herdr-cli", command: "herdr", herdr: true }),
-    /tools\.agents[\s\S]*Promise\.all[\s\S]*blocking[\s\S]*default true[\s\S]*returned responses[\s\S]*do not use blocking:false, watch, read, wait, or sleep/i,
+    herdrGuidance,
+    /tools\.agents[\s\S]*blocking:false[\s\S]*useful work that does not depend on those agents[\s\S]*still pending[\s\S]*end the turn[\s\S]*delivers completions automatically[\s\S]*resumes the session[\s\S]*do not use watch, read, wait, or sleep[\s\S]*do not reuse old agent names/i,
   );
+  assert.doesNotMatch(herdrGuidance, /Promise\.all|default true/);
 
   const childGuidance = delegationGuidance({ kind: "delegated-pi-child", herdr: false });
   assert.doesNotMatch(childGuidance, parentRequirement);
